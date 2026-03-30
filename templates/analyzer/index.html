@@ -1,0 +1,694 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>넷퍼넬 로그 분석기</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        :root {
+            --bg: #f6f7fb;
+            --card: #fff;
+            --fg: #0f172a;
+            --muted: #6b7280;
+            --ring: #11182722;
+            --chip: #eef2ff
+        }
+
+        * {
+            box-sizing: border-box
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--fg);
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Apple SD Gothic Neo, Noto Sans KR, sans-serif
+        }
+
+        .wrap {
+            max-width: 1200px;
+            margin: 24px auto;
+            padding: 0 16px
+        }
+
+        .hidden {
+            display: none !important
+        }
+
+        h1 {
+            margin: 0 0 18px;
+            font-size: 26px;
+            letter-spacing: -.02em
+        }
+
+        label {
+            font-size: 14px;
+            color: var(--muted)
+        }
+
+        input[type="text"],
+        input[type="number"],
+        input[type="file"],
+        input[type="date"],
+        input[type="time"] {
+            padding: 12px;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            background: #fff;
+            font-size: 16px
+        }
+
+        button {
+            padding: 10px 14px;
+            border-radius: 10px;
+            border: 1px solid #e5e7eb;
+            background: #111827;
+            color: #fff;
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 14px
+        }
+
+        button.ghost {
+            background: #fff;
+            color: #111827
+        }
+
+        button[disabled] {
+            opacity: .55;
+            cursor: not-allowed
+        }
+
+        .subtle {
+            font-size: 13px;
+            color: var(--muted)
+        }
+
+        .tabs {
+            display: flex;
+            gap: 6px;
+            position: relative;
+            z-index: 10;
+            border-bottom: 1px solid #e5e7eb;
+            margin: 6px 0 12px
+        }
+
+        .tab {
+            position: relative;
+            top: 1px;
+            padding: 10px 14px;
+            border: 1px solid #e5e7eb;
+            border-bottom: none;
+            border-radius: 10px 10px 0 0;
+            background: #eef0f6;
+            color: #374151;
+            user-select: none;
+            cursor: pointer;
+            min-width: 120px;
+            text-align: center
+        }
+
+        .tab.active {
+            background: #fff;
+            color: #111827;
+            box-shadow: 0 -1px 0 #fff inset
+        }
+
+        .tab.disabled {
+            background: #f3f4f6;
+            color: #9ca3af;
+            cursor: not-allowed
+        }
+
+        .section {
+            margin-top: 16px;
+            background: #fff;
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 1px 0 var(--ring), 0 12px 28px -14px var(--ring)
+        }
+
+        .controls {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 1px 0 var(--ring), 0 12px 28px -14px var(--ring);
+            padding: 16px
+        }
+
+        .controls-grid {
+            display: grid;
+            gap: 16px;
+            align-items: start;
+            grid-template-columns: 1.5fr 1fr
+        }
+
+        .left-col,
+        .right-col {
+            display: flex;
+            flex-direction: column;
+            gap: 12px
+        }
+
+        .actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-top: 4px
+        }
+
+        .option-fields {
+            display: none;
+            gap: 8px;
+            margin-top: 8px
+        }
+
+        .option-fields.show {
+            display: flex
+        }
+
+        .filerange {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+            font-size: 13px;
+            color: var(--muted)
+        }
+
+        progress {
+            width: 100%;
+            height: 12px
+        }
+
+        .kpis {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 16px
+        }
+
+        @media (max-width:1100px) {
+            .kpis {
+                grid-template-columns: repeat(2, 1fr)
+            }
+        }
+
+        .kpi {
+            background: #fff;
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 1px 0 var(--ring), 0 12px 28px -14px var(--ring)
+        }
+
+        .kpi h3 {
+            margin: 0;
+            font-size: 15px;
+            color: #6b7280;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            justify-content: space-between
+        }
+
+        .num {
+            margin-top: 8px;
+            font-size: 38px;
+            font-weight: 900;
+            letter-spacing: -.02em
+        }
+
+        .chip {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 999px;
+            background: var(--chip);
+            color: #3730a3;
+            font-weight: 700;
+            font-size: 12px
+        }
+
+        .codegrid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 12px
+        }
+
+        .codecard {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 1px 0 var(--ring), 0 12px 28px -14px var(--ring);
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px
+        }
+
+        .codecard .title {
+            font-size: 14px;
+            color: #6b7280
+        }
+
+        .codecard .desc {
+            font-size: 12px;
+            color: #6b7280
+        }
+
+        .codecard .big {
+            font-size: 28px;
+            font-weight: 800
+        }
+
+        .codecard .pct {
+            font-size: 13px;
+            color: #6b7280
+        }
+
+        .codecard button {
+            align-self: flex-start;
+            font-size: 13px;
+            background: #4f46e5;
+            color: #fff;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer
+        }
+
+        .grid2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px
+        }
+
+        .statcard {
+            background: #fff;
+            border-radius: 16px;
+            box-shadow: 0 1px 0 var(--ring), 0 12px 28px -14px var(--ring);
+            padding: 16px
+        }
+
+        .statcard h4 {
+            margin: 0 0 8px;
+            font-size: 15px;
+            color: #6b7280
+        }
+
+        .mono {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 15px
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse
+        }
+
+        .table th,
+        .table td {
+            border-top: 1px solid #e5e7eb;
+            padding: 10px 8px;
+            text-align: right
+        }
+
+        .table th:first-child,
+        .table td:first-child {
+            text-align: left
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: #fee2e2;
+            color: #b91c1c;
+            font-weight: 700;
+            font-size: 12px
+        }
+
+        .trace-table {
+            width: 100%;
+            border-collapse: collapse
+        }
+
+        .trace-table th,
+        .trace-table td {
+            border-top: 1px solid #e5e7eb;
+            padding: 8px;
+            text-align: left
+        }
+
+        .help {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #eef2ff;
+            color: #111827;
+            font-size: 12px;
+            font-weight: 800;
+            cursor: help;
+            position: relative;
+            user-select: none
+        }
+
+        .help .tip {
+            position: absolute;
+            top: 120%;
+            left: 0;
+            transform: translateY(6px);
+            background: #111827;
+            color: #fff;
+            padding: 10px 12px;
+            border-radius: 10px;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity .15s, transform .15s;
+            width: min(480px, 78vw);
+            font-size: 13px;
+            line-height: 1.45;
+            z-index: 50
+        }
+
+        .help:hover .tip,
+        .help:focus .tip {
+            opacity: 1;
+            transform: translateY(0)
+        }
+
+        .help .tip d {
+            color: #f06d41
+        }
+
+        .help .tip b {
+            color: #a5b4fc
+        }
+    </style>
+</head>
+
+<body>
+    <div class="wrap">
+        <h1>넷퍼넬 로그 분석기</h1>
+
+        <div class="tabs" id="tabs">
+            <div class="tab active" data-tab="analyze">로그 분석</div>
+            <div class="tab disabled" data-tab="trace" title="먼저 로그 분석을 완료하세요">사용자 추적</div>
+            <div class="tab disabled" data-tab="dash" title="먼저 로그 분석을 완료하세요">대시보드</div>
+        </div>
+
+        <div class="section" id="panel-analyze">
+            <div class="controls">
+                <div class="controls-grid">
+                    <div class="left-col">
+                        <div>
+                            <label for="filePath">서버 파일 경로 (대용량 추천)</label><br />
+                            <input id="filePath" type="text" placeholder="예: /var/log/access.log" style="width:100%" />
+                            <div class="subtle" id="fileInfo">경로 입력 시 자동으로 범위를 탐지합니다</div>
+                        </div>
+                        <div>
+                            <label for="fileInput">또는 파일 업로드 (소용량)</label><br />
+                            <input id="fileInput" type="file" accept=".txt,.log" />
+                            <div class="subtle" id="fileName">선택된 파일 없음</div>
+                        </div>
+                        <div>
+                            <label for="project">프로젝트 ID</label><br />
+                            <input id="project" type="text" placeholder="예: service_1" />
+                        </div>
+                        <div>
+                            <label for="segment">세그먼트 ID (비우면 전체)</label><br />
+                            <input id="segment" type="text" placeholder="예: test" />
+                        </div>
+
+                        <div>
+                            <label>시간 범위 (선택)</label>
+                            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px">
+                                <div><input id="dateStart" type="date"> <input id="timeStart" type="time" step="60"
+                                        style="margin-left:6px"></div>
+                                <div><input id="dateEnd" type="date"> <input id="timeEnd" type="time" step="60"
+                                        style="margin-left:6px"></div>
+                            </div>
+                            <div class="filerange" style="margin-top:6px">
+                                <span class="label">파일 범위:</span>
+                                <span id="rangeStart">-</span><span class="tilde" style="padding:0 6px">~</span><span
+                                    id="rangeEnd">-</span>
+                            </div>
+                        </div>
+
+                        <div class="actions">
+                            <button id="analyzeBtn">결과 출력</button>
+                            <button id="cancelBtn" class="ghost" disabled>취소</button>
+                        </div>
+                    </div>
+
+                    <div class="right-col">
+                        <div>
+                            <label>재요청 주기</label>
+                            <div style="margin-top:4px">
+                                <label style="display:flex;gap:8px;align-items:center">
+                                    <input type="checkbox" id="chkRPS" /> 활성화
+                                </label>
+                            </div>
+                            <div id="rpsFields" class="option-fields">
+                                <input id="rpsMin" type="number" min="0" placeholder="최소(기본 1초)" style="width:160px" />
+                                <input id="rpsMax" type="number" min="0" placeholder="최대(기본 10초)" style="width:160px" />
+                            </div>
+                            <div class="subtle">체크 시 5002 사이 간격 통계 + 임계 초과/대기순번유지 집계</div>
+                        </div>
+
+                        <div>
+                            <label>대기 순번 유지</label>
+                            <div style="margin-top:4px">
+                                <label style="display:flex;gap:8px;align-items:center">
+                                    <input type="checkbox" id="chkHold" /> 활성화
+                                </label>
+                            </div>
+                            <div id="holdFields" class="option-fields">
+                                <input id="holdSec" type="number" min="1" placeholder="유지 시간(기본 60초)"
+                                    style="width:180px" />
+                            </div>
+                            <div class="subtle">재요청 주기 MAX 초과 구간 중, 유지시간 &le;/&gt;로 분리 집계</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="progressSection" class="section hidden">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                    <h2>진행률</h2><span class="subtle" id="progressText">0%</span>
+                </div>
+                <progress id="progressBar" value="0" max="100"></progress>
+            </div>
+
+            <!-- KPI 6개 -->
+            <div class="kpis">
+                <div class="kpi">
+                    <h3>진입 요청 IP
+                        <span class="help" tabindex="0">?
+                            <span class="tip">
+                                <d>정의:</d> <b>5101</b> 또는 <b>5002(200/201)</b>의 최초 요청 <b>IP</b> 고유 수.
+                            </span>
+                        </span>
+                    </h3>
+                    <div class="num" id="kpi-enter-ip">0</div>
+                </div>
+                <div class="kpi">
+                    <h3>진입 요청한 사용자(tid)
+                        <span class="help" tabindex="0">?
+                            <span class="tip">
+                                <d>정의:</d> <b>5101</b> 또는 <b>5002(200/201)</b>를 보낸 고유 <b>사용자(uid=tid|key)</b> 수.
+                            </span>
+                        </span>
+                    </h3>
+                    <div class="num" id="kpi-req-user">0</div>
+                </div>
+                <div class="kpi">
+                    <h3>대기 발생한 사용자(tid)
+                        <span class="help" tabindex="0">?
+                            <span class="tip">
+                                <d>정의:</d> (5101/5002 요청 중) NF <b>201</b> 응답을 받은 고유 <b>uid</b> 수.
+                            </span>
+                        </span>
+                    </h3>
+                    <div class="num" id="kpi-wait-user">0</div>
+                </div>
+                <div class="kpi">
+                    <h3>완료 요청한 사용자(tid)
+                        <span class="help" tabindex="0">?
+                            <span class="tip">
+                                <d>정의:</d> <b>opcode 5004</b>를 보낸 고유 <b>uid</b> 수.
+                            </span>
+                        </span>
+                    </h3>
+                    <div class="num" id="kpi-done-user">0</div>
+                </div>
+                <div class="kpi">
+                    <h3>대기 중 이탈 사용자(tid) <span class="chip" id="kpi-qw-rate">0.00%</span>
+                        <span class="help" tabindex="0">?
+                            <span class="tip">
+                                <d>정의:</d> <b>201</b>은 있었으나 <b>5004</b>가 없는 <b>uid</b>.
+                            </span>
+                        </span>
+                    </h3>
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <div class="num" id="kpi-qw">0</div>
+                        <button id="btn-qw-csv" class="ghost">CSV</button>
+                    </div>
+                </div>
+                <div class="kpi">
+                    <h3>진입 후 이탈 사용자(tid) <span class="chip" id="kpi-pe-rate">0.00%</span>
+                        <span class="help" tabindex="0">?
+                            <span class="tip">
+                                <d>정의:</d> <b>200</b>은 있었으나 <b>5004</b>가 없는 <b>uid</b>.
+                            </span>
+                        </span>
+                    </h3>
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <div class="num" id="kpi-pe">0</div>
+                        <button id="btn-pe-csv" class="ghost">CSV</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2 style="margin:0 0 8px">상태코드 상세</h2>
+                <div id="codeCards" class="codegrid"></div>
+            </div>
+
+            <div id="detailSection" class="section">
+                <div class="grid2">
+                    <div class="statcard">
+                        <h4>대기 통신 간 재요청 주기(초)</h4>
+                        <div class="mono" id="stat-rps">최소=0 / 최대=0 / 평균=0.00</div>
+                    </div>
+                    <div class="statcard">
+                        <h4>재요청 주기 MAX 초과</h4>
+                        <div class="mono" id="stat-rps-over">0 건 (최소=0 / 최대=0 / 평균=0.00)</div>
+                    </div>
+                    <div class="statcard">
+                        <h4>대기 순번 유지 동작</h4>
+                        <div class="mono" id="stat-hold-act">0 건 (최소=0 / 최대=0 / 평균=0.00)</div>
+                    </div>
+                    <div class="statcard">
+                        <h4>대기 순번 유지 시간 초과</h4>
+                        <div class="mono" id="stat-hold-over">0 건 (최소=0 / 최대=0 / 평균=0.00)</div>
+                    </div>
+                    <div class="statcard">
+                        <h4>대기 후 진입 사용자 대기 시간(초)</h4>
+                        <div class="mono" id="stat-wait-enter">최소=0 / 최대=0 / 평균=0.00</div>
+                    </div>
+                    <div class="statcard">
+                        <h4>대기 중 이탈 사용자 대기 시간(초)</h4>
+                        <div class="mono" id="stat-wait-quit">최소=0 / 최대=0 / 평균=0.00</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
+                <details id="serverDetails">
+                    <summary style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                        <h3 style="margin:0">서버별 통계</h3>
+                        <button id="btn-server-csv" class="ghost" style="margin-left:auto">CSV</button>
+                    </summary>
+                    <table class="table" id="serverTable">
+                        <thead>
+                            <tr>
+                                <th>서버</th>
+                                <th>발급(NF200)</th>
+                                <th>대기(NF201)</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                    <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                        <div><b>서버 혼합 사용자(이상)</b> <span id="anomCnt" class="badge">0</span></div>
+                        <button id="btn-anom-csv">CSV</button>
+                    </div>
+                </details>
+            </div>
+        </div><!-- /panel-analyze -->
+
+        <div class="section hidden" id="panel-trace">
+            <h2>사용자 추적</h2>
+            <div class="trace-grid">
+                <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
+                    <div><label>IP (필수)</label><br /><input id="trace-ip" type="text" placeholder="예: 123.123.123.123"
+                            style="width:220px" /></div>
+                    <div><label>시작 시간</label><br /><input id="trace-from" type="datetime-local" step="1"
+                            style="width:200px" /></div>
+                    <div><label>종료 시간</label><br /><input id="trace-to" type="datetime-local" step="1"
+                            style="width:200px" /></div>
+                </div>
+                <div class="actions" style="margin-top:8px"><button id="traceBtn" class="ghost">검색</button>
+                    <div class="subtle" id="traceHint"></div>
+                </div>
+            </div>
+            <div class="section" id="traceResult" style="display:none">
+                <h2>검색 결과</h2>
+                <div id="traceBox"></div>
+            </div>
+        </div>
+
+        <div class="section hidden" id="panel-dash">
+            <h2>대시보드 (IP Top)</h2>
+            <div class="grid2">
+                <div class="statcard">
+                    <h4>요청(발급 tid) 최다 IP</h4>
+                    <table class="table" id="top-issue">
+                        <thead>
+                            <tr>
+                                <th>IP</th>
+                                <th>발급 tid 수</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table><button id="csv-issue" class="ghost" style="margin-top:8px">CSV</button>
+                </div>
+                <div class="statcard">
+                    <h4>총 대기시간 최다 IP</h4>
+                    <table class="table" id="top-wait">
+                        <thead>
+                            <tr>
+                                <th>IP</th>
+                                <th>총 대기시간(s)</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table><button id="csv-wait" class="ghost" style="margin-top:8px">CSV</button>
+                </div>
+                <div class="statcard">
+                    <h4>대기 중 이탈 최다 IP</h4>
+                    <table class="table" id="top-qw">
+                        <thead>
+                            <tr>
+                                <th>IP</th>
+                                <th>이탈 tid 수</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table><button id="csv-qw" class="ghost" style="margin-top:8px">CSV</button>
+                </div>
+                <div class="statcard">
+                    <h4>진입 후 이탈 최다 IP</h4>
+                    <table class="table" id="top-pe">
+                        <thead>
+                            <tr>
+                                <th>IP</th>
+                                <th>이탈 tid 수</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table><button id="csv-pe" class="ghost" style="margin-top:8px">CSV</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="{% static 'analyzer/app.js' %}"></script>
+</body>
+
+</html>
