@@ -15,80 +15,44 @@ NF4 액세스 로그를 업로드하거나 서버 로컬 경로를 지정하여,
 - IP별 사용자 추적 (시간대 필터 지원)
 - CSV 다운로드
 
-## 로컬 실행 방법
+## 실행 방법
 
 ### 요구사항
 
 - Python 3.12+
 
-### 설치 및 실행
+### 1. 압축 해제
+
+공유드라이브에서 다운로드한 zip 파일을 원하는 위치에 압축 해제합니다.
+
+### 2. 가상환경 생성 및 활성화
 
 ```bash
-git clone https://github.com/theo-bk/Log_anaylizer.git
-cd Log_anaylizer
+cd log_analyze
 
 python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
+```
 
+### 3. 패키지 설치
+
+```bash
 pip install -r requirements.txt
+```
+
+### 4. DB 초기화
+
+```bash
 python manage.py migrate
+```
+
+### 5. 서버 실행
+
+```bash
 python manage.py runserver
 ```
 
 브라우저에서 http://127.0.0.1:8000 에 접속합니다.
-
-## 퍼블릭 접근 (외부에서 실행)
-
-로컬에 프로젝트를 다운로드하지 않고 실행하는 방법입니다.
-
-### 방법 1: GitHub Codespaces
-
-1. 이 저장소 페이지에서 **Code** > **Codespaces** > **Create codespace on main** 클릭
-2. 터미널이 열리면 다음을 실행:
-   ```bash
-   pip install -r requirements.txt
-   python manage.py migrate
-   python manage.py runserver
-   ```
-3. Codespaces가 자동으로 포트 포워딩하여 브라우저에서 접근 가능
-
-### 방법 2: GitPod
-
-브라우저 주소창에 다음을 입력합니다:
-
-```
-https://gitpod.io/#https://github.com/theo-bk/Log_anaylizer
-```
-
-터미널에서 동일하게 설치 및 실행합니다.
-
-### 방법 3: pip + 원격 실행 (다운로드 없이)
-
-```bash
-pip install Django>=6.0
-python -c "
-import subprocess, tempfile, os
-d = tempfile.mkdtemp()
-subprocess.run(['git', 'clone', 'https://github.com/theo-bk/Log_anaylizer.git', d])
-os.chdir(d)
-subprocess.run(['python', 'manage.py', 'migrate'])
-subprocess.run(['python', 'manage.py', 'runserver'])
-"
-```
-
-### 방법 4: Docker (선택)
-
-```bash
-docker run --rm -it -p 8000:8000 -w /app -v /tmp:/tmp python:3.12-slim bash -c "
-  pip install Django>=6.0 &&
-  git clone https://github.com/theo-bk/Log_anaylizer.git /app &&
-  cd /app &&
-  python manage.py migrate &&
-  python manage.py runserver 0.0.0.0:8000
-"
-```
-
-브라우저에서 http://localhost:8000 에 접속합니다.
 
 ## API 엔드포인트
 
