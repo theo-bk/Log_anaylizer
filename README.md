@@ -38,40 +38,63 @@ NF4 액세스 로그를 업로드하거나 서버 로컬 경로를 지정하여,
 
 ### 요구사항
 
-- Python 3.12+
+- Python 3.10 이상 (3.11, 3.12 권장)
 
 ### 1. 압축 해제
 
 공유드라이브에서 다운로드한 zip 파일을 원하는 위치에 압축 해제합니다.
 
-### 2. 가상환경 생성 및 활성화
+### 2. 프로젝트 루트로 이동
+
+압축 해제된 폴더 안에 `manage.py` 파일이 있는 위치로 이동합니다.
 
 ```bash
-cd log_analyze
-
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+cd Log_anaylizer-main
 ```
 
-### 3. 패키지 설치
+> **주의**: `log_analyze/` 하위 디렉토리가 아닌, `manage.py`와 `requirements.txt`가 있는 **프로젝트 루트**에서 작업합니다.
+
+### 3. 가상환경 생성 및 활성화
+
+```bash
+python3 -m venv .venv
+```
+
+활성화:
+
+```bash
+# Linux / macOS
+source .venv/bin/activate
+
+# Windows
+.venv\Scripts\activate
+```
+
+### 4. 패키지 설치
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. DB 초기화
+### 5. DB 초기화
 
 ```bash
-python manage.py migrate
+python3 manage.py migrate
 ```
 
-### 5. 서버 실행
+### 6. 서버 실행
 
 ```bash
-python manage.py runserver
+python3 manage.py runserver
 ```
 
 브라우저에서 http://127.0.0.1:8000 에 접속합니다.
+
+외부에서 접속하려면 다음과 같이 실행합니다:
+
+```bash
+python3 manage.py runserver 0.0.0.0:8000
+```
 
 ## 사용 방법
 
