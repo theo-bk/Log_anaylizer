@@ -51,8 +51,8 @@
   const $dashFilterHint = $('#dashFilterHint');
 
   // 탭/패널
-  const $tabTrace    = document.querySelector('.tab[data-tab="trace"]');
-  const $tabDash     = document.querySelector('.tab[data-tab="dash"]');
+  const $tabTrace    = document.querySelector('.nav-tab[data-tab="trace"]');
+  const $tabDash     = document.querySelector('.nav-tab[data-tab="dash"]');
   const $panelAnalyze= $('#panel-analyze');
   const $panelTrace  = $('#panel-trace');
   const $panelDash   = $('#panel-dash');
@@ -303,13 +303,13 @@
 
   // ====== 탭 ======
   function showTab(name) {
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.querySelector(`.tab[data-tab="${name}"]`)?.classList.add('active');
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+    document.querySelector(`.nav-tab[data-tab="${name}"]`)?.classList.add('active');
     [$panelAnalyze, $panelTrace, $panelDash].forEach(p => p?.classList.add('hidden'));
     document.getElementById(`panel-${name}`)?.classList.remove('hidden');
   }
   function bindTabsOnce() {
-    document.querySelectorAll('.tab').forEach(tab => {
+    document.querySelectorAll('.nav-tab').forEach(tab => {
       if (tab.dataset.bound === '1') return;
       tab.dataset.bound = '1';
       tab.addEventListener('click', () => { if (!tab.classList.contains('disabled')) showTab(tab.dataset.tab); });
@@ -319,7 +319,6 @@
     [$tabTrace, $tabDash].forEach(t => {
       if (!t) return;
       t.classList.remove('disabled');
-      t.style.pointerEvents = 'auto'; t.style.opacity = '1'; t.style.cursor = 'pointer';
       t.removeAttribute('title');
     });
   }
@@ -568,23 +567,127 @@
     bind('btn-pe-csv', data.postEnterRows, 'enter_no_done_users.csv', ['timestamp','ip','tid','status','server']);
   }
 
-  // ====== 대시보드: IP Top 테이블 ======
-  function renderDashboard(data) {
-    function fillTable(tableId, rows) {
-      const tbody = document.querySelector(`#${tableId} tbody`);
-      if (!tbody) return;
-      tbody.innerHTML = '';
-      (rows || []).forEach((r) => {
-        const tr = document.createElement('tr');
-        const ipLink = `<a href="#" class="ip-link" data-ip="${r.ip}" style="color:#4f46e5;text-decoration:underline;cursor:pointer">${r.ip}</a>`;
-        tr.innerHTML = `<td>${ipLink}</td><td>${typeof r.count === 'number' && r.count % 1 !== 0 ? r.count.toFixed(1) : fmt(r.count)}</td>`;
-        tbody.appendChild(tr);
-      });
+  // ====== 대시보드: 차트 ======
+  const chartInstances = {};
+
+  function destroyChart(id) {
+    if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+  }
+
+  function makeHorizBarChart(canvasId, rows, color, unit) {
+    const el = document.getElementById(canvasId);
+    if (!el) return;
+    destroyChart(canvasId);
+
+    const top10 = (rows || []).slice(0, 10);
+    if (!top10.length) {
+      // 빈 상태 텍스트
+      el.style.display = 'none';
+      const wrap = el.parentElement;
+      let empty = wrap.querySelector('.chart-empty');
+      if (!empty) {
+        empty = document.createElement('div');
+        empty.className = 'chart-empty';
+        empty.style.cssText = 'display:flex;align-items:center;justify-content:center;height:260px;color:#9ca3af;font-size:13px';
+        empty.textContent = '데이터 없음';
+        wrap.appendChild(empty);
+      }
+      return;
     }
-    fillTable('top-issue', data.topIssueIP);
-    fillTable('top-wait', data.topWaitIP);
-    fillTable('top-qw', data.topQwIP);
-    fillTable('top-pe', data.topPeIP);
+    el.style.display = '';
+    const empty = el.parentElement?.querySelector('.chart-empty');
+    if (empty) empty.remove();
+
+    const labels = top10.map(r => r.ip);
+    const values = top10.map(r => typeof r.count === 'number' ? r.count : 0);
+
+    chartInstances[canvasId] = new Chart(el.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          data: values,
+          backgroundColor: color,
+          borderRadius: 4,
+          borderSkipped: false,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => `${ctx.parsed.x.toLocaleString('ko-KR')}${unit ? ' ' + unit : ''}`
+            }
+          }
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            grid: { color: '#f3f4f6' },
+            ticks: { precision: 0, font: { size: 11 }, color: '#6b7280' }
+          },
+          y: { ticks: { font: { size: 11 }, color: '#1e293b' } }
+        },
+        onClick: (evt, elements) => {
+          if (!elements.length) return;
+          const ip = labels[elements[0].index];
+          if ($traceIp) $traceIp.value = ip;
+          showTab('trace');
+          doTrace(ip);
+        },
+        onHover: (evt, elements) => {
+          el.style.cursor = elements.length ? 'pointer' : 'default';
+        }
+      }
+    });
+  }
+
+  function renderCodeDonut(codeDetails) {
+    const section = document.getElementById('dash-code-section');
+    const el = document.getElementById('chart-codes');
+    if (!el) return;
+    destroyChart('chart-codes');
+
+    const codes = (codeDetails || []).filter(c => !/^2/.test(String(c.code))).slice(0, 8);
+    if (!codes.length) { if (section) section.style.display = 'none'; return; }
+    if (section) section.style.display = '';
+
+    const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#8b5cf6','#ec4899','#14b8a6'];
+
+    chartInstances['chart-codes'] = new Chart(el.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: codes.map(c => `${c.code}${CODE_DESC[String(c.code)] ? ' · ' + CODE_DESC[String(c.code)] : ''}`),
+        datasets: [{
+          data: codes.map(c => c.cnt),
+          backgroundColor: COLORS.slice(0, codes.length),
+          borderWidth: 2,
+          borderColor: '#fff',
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'right', labels: { font: { size: 12 }, padding: 14, boxWidth: 14 } },
+          tooltip: {
+            callbacks: { label: ctx => `${ctx.raw.toLocaleString('ko-KR')}건` }
+          }
+        }
+      }
+    });
+  }
+
+  function renderDashboard(data) {
+    makeHorizBarChart('chart-issue', data.topIssueIP,  '#818cf8');
+    makeHorizBarChart('chart-wait',  data.topWaitIP,   '#fb923c', 's');
+    makeHorizBarChart('chart-qw',    data.topQwIP,     '#f87171');
+    makeHorizBarChart('chart-pe',    data.topPeIP,     '#c084fc');
+
+    if (data.codeDetails) renderCodeDonut(data.codeDetails);
 
     const csvBind = (id, rows) => {
       const btn = document.getElementById(id);
@@ -594,19 +697,9 @@
       };
     };
     csvBind('csv-issue', data.topIssueIP);
-    csvBind('csv-wait', data.topWaitIP);
-    csvBind('csv-qw', data.topQwIP);
-    csvBind('csv-pe', data.topPeIP);
-
-    document.querySelectorAll('#panel-dash .ip-link').forEach(link => {
-      link.addEventListener('click', (e) => {
-        e.preventDefault();
-        const ip = link.dataset.ip;
-        if ($traceIp) $traceIp.value = ip;
-        showTab('trace');
-        doTrace(ip);
-      });
-    });
+    csvBind('csv-wait',  data.topWaitIP);
+    csvBind('csv-qw',    data.topQwIP);
+    csvBind('csv-pe',    data.topPeIP);
   }
 
   // ====== 사용자 추적 ======

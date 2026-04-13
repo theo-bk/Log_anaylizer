@@ -92,40 +92,82 @@
             color: var(--muted)
         }
 
-        .tabs {
+        /* ── App header & nav ── */
+        .app-header {
+            background: #0f172a;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom: 1px solid rgba(255,255,255,.07)
+        }
+        .header-inner {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 16px;
+            height: 58px;
             display: flex;
-            gap: 6px;
-            position: relative;
-            z-index: 10;
-            border-bottom: 1px solid #e5e7eb;
-            margin: 6px 0 12px
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px
         }
-
-        .tab {
-            position: relative;
-            top: 1px;
-            padding: 10px 14px;
-            border: 1px solid #e5e7eb;
-            border-bottom: none;
-            border-radius: 10px 10px 0 0;
-            background: #eef0f6;
-            color: #374151;
-            user-select: none;
+        .header-brand {
+            font-size: 17px;
+            font-weight: 800;
+            color: #f1f5f9;
+            letter-spacing: -.02em;
+            white-space: nowrap
+        }
+        .header-nav { display: flex; gap: 4px }
+        .nav-tab {
+            padding: 7px 20px;
+            border-radius: 8px;
+            border: none;
+            background: transparent;
+            color: #94a3b8;
+            font-size: 14px;
+            font-weight: 600;
             cursor: pointer;
-            min-width: 120px;
-            text-align: center
+            transition: background .15s, color .15s;
+            white-space: nowrap
         }
+        .nav-tab:hover:not(.disabled) {
+            background: rgba(255,255,255,.09);
+            color: #f1f5f9
+        }
+        .nav-tab.active { background: #4f46e5; color: #fff }
+        .nav-tab.disabled { color: #475569; cursor: not-allowed }
 
-        .tab.active {
+        /* ── Dashboard charts ── */
+        .dash-charts-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+            margin-top: 16px
+        }
+        @media (max-width:900px) { .dash-charts-grid { grid-template-columns: 1fr } }
+        .chart-card {
             background: #fff;
-            color: #111827;
-            box-shadow: 0 -1px 0 #fff inset
+            border-radius: 16px;
+            padding: 16px;
+            box-shadow: 0 1px 0 var(--ring), 0 12px 28px -14px var(--ring)
         }
-
-        .tab.disabled {
-            background: #f3f4f6;
-            color: #9ca3af;
-            cursor: not-allowed
+        .chart-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px
+        }
+        .chart-card-header h4 { margin: 0; font-size: 14px; color: #374151; font-weight: 700 }
+        .chart-hint { font-size: 11px; color: #9ca3af; font-weight: 400; margin-left: 4px }
+        .chart-canvas-wrap { position: relative; height: 260px }
+        .dash-code-section { margin-top: 16px }
+        .dash-code-inner {
+            display: flex;
+            gap: 32px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 12px;
+            justify-content: center
         }
 
         .section {
@@ -519,14 +561,17 @@
 </head>
 
 <body>
-    <div class="wrap">
-        <h1>넷퍼넬 로그 분석기</h1>
-
-        <div class="tabs" id="tabs">
-            <div class="tab active" data-tab="analyze">로그 분석</div>
-            <div class="tab disabled" data-tab="trace" title="먼저 로그 분석을 완료하세요">사용자 추적</div>
-            <div class="tab disabled" data-tab="dash" title="먼저 로그 분석을 완료하세요">대시보드</div>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="header-brand">넷퍼넬 로그 분석기</div>
+            <nav class="header-nav">
+                <button class="nav-tab active" data-tab="analyze">로그 분석</button>
+                <button class="nav-tab disabled" data-tab="dash" title="먼저 로그 분석을 완료하세요">대시보드</button>
+                <button class="nav-tab disabled" data-tab="trace" title="먼저 로그 분석을 완료하세요">사용자 추적</button>
+            </nav>
         </div>
+    </header>
+    <div class="wrap">
 
         <div class="section" id="panel-analyze">
             <div class="controls">
@@ -748,6 +793,60 @@
             </div>
         </div><!-- /panel-analyze -->
 
+        <!-- 대시보드 패널 (로그분석 다음) -->
+        <div class="section hidden" id="panel-dash">
+            <!-- 서버 서브탭 -->
+            <div id="dashServerSubTabs" class="server-subtabs hidden" style="margin-bottom:12px"></div>
+            <!-- 시간 범위 필터 -->
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:4px">
+                <div><label>시작 시간</label><br /><input id="dash-from" type="datetime-local" step="1" style="width:200px" /></div>
+                <div><label>종료 시간</label><br /><input id="dash-to" type="datetime-local" step="1" style="width:200px" /></div>
+                <button id="dashFilterBtn" class="ghost">조회</button>
+                <button id="dashResetBtn" class="ghost">전체</button>
+                <span class="subtle" id="dashFilterHint"></span>
+            </div>
+            <!-- IP Top 차트 2×2 -->
+            <div class="dash-charts-grid">
+                <div class="chart-card">
+                    <div class="chart-card-header">
+                        <h4>요청(tid 발급) 최다 IP <span class="chart-hint">— 막대 클릭 시 사용자 추적</span></h4>
+                        <button id="csv-issue" class="ghost" style="font-size:12px;padding:4px 10px">CSV</button>
+                    </div>
+                    <div class="chart-canvas-wrap"><canvas id="chart-issue"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card-header">
+                        <h4>총 대기시간 최다 IP<span class="chart-hint"> (초)</span></h4>
+                        <button id="csv-wait" class="ghost" style="font-size:12px;padding:4px 10px">CSV</button>
+                    </div>
+                    <div class="chart-canvas-wrap"><canvas id="chart-wait"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card-header">
+                        <h4>대기 중 이탈 최다 IP</h4>
+                        <button id="csv-qw" class="ghost" style="font-size:12px;padding:4px 10px">CSV</button>
+                    </div>
+                    <div class="chart-canvas-wrap"><canvas id="chart-qw"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card-header">
+                        <h4>진입 후 이탈 최다 IP</h4>
+                        <button id="csv-pe" class="ghost" style="font-size:12px;padding:4px 10px">CSV</button>
+                    </div>
+                    <div class="chart-canvas-wrap"><canvas id="chart-pe"></canvas></div>
+                </div>
+            </div>
+            <!-- 상태코드 분포 도넛 -->
+            <div class="section dash-code-section" id="dash-code-section" style="display:none">
+                <h3 style="margin:0 0 2px">상태코드 분포</h3>
+                <div class="subtle">비정상 응답코드 발생 비율 (200·201 제외)</div>
+                <div class="dash-code-inner">
+                    <canvas id="chart-codes" style="max-width:300px;max-height:300px"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 사용자 추적 패널 -->
         <div class="section hidden" id="panel-trace">
             <h2>사용자 추적</h2>
             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
@@ -759,7 +858,6 @@
             <div class="subtle" id="traceHint" style="margin-top:8px"></div>
 
             <div id="traceResult" style="display:none;margin-top:16px">
-                <!-- 요약 카드 -->
                 <div class="trace-summary-cards" id="traceSummaryCards">
                     <div class="trace-summary-card">
                         <div class="label">전체 세션</div>
@@ -785,72 +883,10 @@
                 <div id="traceBox"></div>
             </div>
         </div>
-
-        <div class="section hidden" id="panel-dash">
-            <h2>대시보드 (IP Top)</h2>
-            <!-- 서버 서브탭 (멀티서버 시 표시) -->
-            <div id="dashServerSubTabs" class="server-subtabs hidden" style="margin-bottom:12px"></div>
-            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
-                <div><label>시작 시간</label><br /><input id="dash-from" type="datetime-local" step="1" style="width:200px" /></div>
-                <div><label>종료 시간</label><br /><input id="dash-to" type="datetime-local" step="1" style="width:200px" /></div>
-                <button id="dashFilterBtn" class="ghost">조회</button>
-                <button id="dashResetBtn" class="ghost">전체</button>
-                <span class="subtle" id="dashFilterHint"></span>
-            </div>
-            <div class="grid2">
-                <div class="statcard">
-                    <h4>요청(발급 tid) 최다 IP</h4>
-                    <table class="table" id="top-issue">
-                        <thead>
-                            <tr>
-                                <th>IP</th>
-                                <th>발급 tid 수</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table><button id="csv-issue" class="ghost" style="margin-top:8px">CSV</button>
-                </div>
-                <div class="statcard">
-                    <h4>총 대기시간 최다 IP</h4>
-                    <table class="table" id="top-wait">
-                        <thead>
-                            <tr>
-                                <th>IP</th>
-                                <th>총 대기시간(s)</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table><button id="csv-wait" class="ghost" style="margin-top:8px">CSV</button>
-                </div>
-                <div class="statcard">
-                    <h4>대기 중 이탈 최다 IP</h4>
-                    <table class="table" id="top-qw">
-                        <thead>
-                            <tr>
-                                <th>IP</th>
-                                <th>이탈 tid 수</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table><button id="csv-qw" class="ghost" style="margin-top:8px">CSV</button>
-                </div>
-                <div class="statcard">
-                    <h4>진입 후 이탈 최다 IP</h4>
-                    <table class="table" id="top-pe">
-                        <thead>
-                            <tr>
-                                <th>IP</th>
-                                <th>이탈 tid 수</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table><button id="csv-pe" class="ghost" style="margin-top:8px">CSV</button>
-                </div>
-            </div>
-        </div>
     </div>
 
-    <script src="{% static 'analyzer/app.js' %}?v=6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+    <script src="{% static 'analyzer/app.js' %}?v=7"></script>
 </body>
 
 </html>
