@@ -630,10 +630,10 @@
           x: {
             beginAtZero: true,
             grid: { color: '#f3f4f6' },
-            ticks: { precision: 0, font: { size: 11 }, color: '#6b7280' }
+            ticks: { precision: 0, font: { size: 13 }, color: '#6b7280' }
           },
           y: {
-            ticks: { font: { size: 11 }, color: '#1e293b' },
+            ticks: { font: { size: 13 }, color: '#1e293b' },
             afterFit: (scale) => { scale.width = Math.max(scale.width, 130); }
           }
         },
@@ -678,7 +678,7 @@
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'bottom', labels: { font: { size: 12 }, padding: 16, boxWidth: 14 } },
+          legend: { position: 'bottom', labels: { font: { size: 14 }, padding: 16, boxWidth: 16 } },
           tooltip: {
             callbacks: { label: ctx => `${ctx.raw.toLocaleString('ko-KR')}건` }
           }
@@ -709,7 +709,7 @@
       options: {
         responsive: true,
         plugins: {
-          legend: { position: 'right', labels: { font: { size: 12 }, padding: 12, boxWidth: 14 } },
+          legend: { position: 'right', labels: { font: { size: 14 }, padding: 12, boxWidth: 16 } },
           tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw.toLocaleString('ko-KR')}명` } }
         }
       }
@@ -744,8 +744,8 @@
         },
         scales: {
           x: { beginAtZero: true, max: req * 1.05, grid: { color: '#f3f4f6' },
-               ticks: { precision: 0, font: { size: 11 }, color: '#6b7280' } },
-          y: { ticks: { font: { size: 12 }, color: '#1e293b' } }
+               ticks: { precision: 0, font: { size: 13 }, color: '#6b7280' } },
+          y: { ticks: { font: { size: 14 }, color: '#1e293b' } }
         }
       }
     });
@@ -775,13 +775,13 @@
       options: {
         indexAxis: 'y', responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', labels: { font: { size: 12 }, padding: 12, boxWidth: 14 } },
+          legend: { position: 'top', labels: { font: { size: 14 }, padding: 12, boxWidth: 16 } },
           tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}` } }
         },
         scales: {
-          x: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 11 }, color: '#6b7280' } },
+          x: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 13 }, color: '#6b7280' } },
           y: {
-            ticks: { font: { size: 11 }, color: '#1e293b' },
+            ticks: { font: { size: 13 }, color: '#1e293b' },
             afterFit: (scale) => { scale.width = Math.max(scale.width, 130); }
           }
         },
@@ -824,12 +824,12 @@
       options: {
         responsive: true, maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', labels: { font: { size: 12 }, padding: 14, boxWidth: 14 } },
+          legend: { position: 'top', labels: { font: { size: 14 }, padding: 14, boxWidth: 16 } },
           tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}명` } }
         },
         scales: {
           x: { grid: { color: '#f3f4f6' } },
-          y: { beginAtZero: true, ticks: { precision: 0, font: { size: 11 } } }
+          y: { beginAtZero: true, ticks: { precision: 0, font: { size: 13 } } }
         }
       }
     });
@@ -868,12 +868,12 @@
         responsive: true, maintainAspectRatio: false,
         interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { position: 'top', labels: { font: { size: 12 }, padding: 14, boxWidth: 24 } },
+          legend: { position: 'top', labels: { font: { size: 14 }, padding: 14, boxWidth: 24 } },
           tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}` } }
         },
         scales: {
-          x: { grid: { color: '#f3f4f6' }, ticks: { maxTicksLimit: 12, font: { size: 10 }, color: '#6b7280', maxRotation: 45, minRotation: 0 } },
-          y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 11 } } }
+          x: { grid: { color: '#f3f4f6' }, ticks: { maxTicksLimit: 12, font: { size: 12 }, color: '#6b7280', maxRotation: 45, minRotation: 0 } },
+          y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 13 } } }
         }
       }
     });
@@ -910,8 +910,8 @@
           tooltip: { callbacks: { label: ctx => `${ctx.raw.toLocaleString('ko-KR')}건` } }
         },
         scales: {
-          x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#374151' } },
-          y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 11 } } }
+          x: { grid: { display: false }, ticks: { font: { size: 13 }, color: '#374151' } },
+          y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 13 } } }
         }
       }
     });
