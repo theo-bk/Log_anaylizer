@@ -103,28 +103,31 @@
         .header-inner {
             max-width: 1200px;
             margin: 0 auto;
-            padding: 0 16px;
-            height: 58px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 12px
+            padding: 0 24px;
+            height: 72px;
+            display: grid;
+            grid-template-columns: 1fr auto 1fr;
+            align-items: center
         }
         .header-brand {
-            font-size: 17px;
+            font-size: 18px;
             font-weight: 800;
             color: #f1f5f9;
             letter-spacing: -.02em;
             white-space: nowrap
         }
-        .header-nav { display: flex; gap: 4px }
+        .header-nav {
+            display: flex;
+            gap: 4px;
+            justify-content: center
+        }
         .nav-tab {
-            padding: 7px 20px;
-            border-radius: 8px;
+            padding: 9px 24px;
+            border-radius: 9px;
             border: none;
             background: transparent;
             color: #94a3b8;
-            font-size: 14px;
+            font-size: 15px;
             font-weight: 600;
             cursor: pointer;
             transition: background .15s, color .15s;
