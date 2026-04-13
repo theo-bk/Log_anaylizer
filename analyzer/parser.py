@@ -191,6 +191,9 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
     entry_ips = set()
 
     gaps_5002 = []
+    ts_req  = defaultdict(int)   # minute_epoch → 요청 수 (5101/5002 200·201)
+    ts_wait = defaultdict(int)   # minute_epoch → 대기 수 (5002 201)
+    ts_done = defaultdict(int)   # minute_epoch → 완료 수 (5004)
 
     code_cnt = defaultdict(int)
     code_map = defaultdict(list)
@@ -322,6 +325,15 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
             sess[1] |= 4  # has_5004
             tids_with_5004.add(session_key)
             sess[4] = tsec  # 5004 완료 시각 기록
+
+        # 시간대별 트래픽 집계 (분 단위 버킷)
+        minute = (tsec // 60) * 60
+        if opcode in (5101, 5002):
+            ts_req[minute] += 1
+            if status_code == 201:
+                ts_wait[minute] += 1
+        elif opcode == 5004:
+            ts_done[minute] += 1
 
         # 집합 관리
         if opcode in (5101, 5002):
@@ -462,6 +474,26 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
     top_wait_tids_list.sort(key=lambda x: x['wait_secs'], reverse=True)
     top_wait_tids = top_wait_tids_list[:5]
 
+    # 시간대별 시리즈
+    _all_min = sorted(set(ts_req) | set(ts_wait) | set(ts_done))
+    time_series = [
+        {'time': epoch_to_str(m), 'req': ts_req.get(m, 0), 'wait': ts_wait.get(m, 0), 'done': ts_done.get(m, 0)}
+        for m in _all_min
+    ]
+
+    # 처리시간 분포 히스토그램 (5개 균등 구간)
+    if all_durations and timeout_sec > 0:
+        _bsize = timeout_sec / 5
+        _hcnt = [0] * 5
+        for _d in all_durations:
+            _hcnt[min(int(_d / _bsize), 4)] += 1
+        dur_histogram = [
+            {'label': f'{int(i * _bsize)}~{int((i + 1) * _bsize)}초', 'count': _hcnt[i]}
+            for i in range(5)
+        ]
+    else:
+        dur_histogram = []
+
     return {
         'range': {
             'startSec': first_ts_sec, 'endSec': last_ts_sec,
@@ -489,6 +521,9 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
             'quit': stat(dropped_wait_times),
         },
         'durationStats': stat(all_durations),
+        'timeSeries': time_series,
+        'durHistogram': dur_histogram,
+        'timeoutSec': timeout_sec,
         'topWaitTids': top_wait_tids,
         'codeDetails': code_details,
         # ---- 멀티서버 merge용 raw 데이터 (응답에서 _strip_internal로 제거됨) ----
@@ -503,6 +538,9 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
             'entry_ips': list(entry_ips),
             'top_wait_pool': top_wait_tids_list[:50],  # top 5보다 큰 pool (merge 재순위용)
             'code_cnt': dict(code_cnt),                # 실제 발생 건수 (500개 캡 미적용)
+            'ts_req': dict(ts_req),
+            'ts_wait': dict(ts_wait),
+            'ts_done': dict(ts_done),
         },
         'quitWaitRows': quit_wait_rows,
         'postEnterRows': post_enter_rows,

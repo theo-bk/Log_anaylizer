@@ -796,7 +796,7 @@
             </div>
         </div><!-- /panel-analyze -->
 
-        <!-- 대시보드 패널 (로그분석 다음) -->
+        <!-- 대시보드 패널 -->
         <div class="section hidden" id="panel-dash">
             <!-- 서버 서브탭 -->
             <div id="dashServerSubTabs" class="server-subtabs hidden" style="margin-bottom:12px"></div>
@@ -808,43 +808,82 @@
                 <button id="dashResetBtn" class="ghost">전체</button>
                 <span class="subtle" id="dashFilterHint"></span>
             </div>
-            <!-- IP Top 차트 2×2 -->
-            <div class="dash-charts-grid">
+
+            <!-- ① 세션 상태 도넛 + ② 진입 깔때기 -->
+            <div class="dash-charts-grid" style="grid-template-columns:1fr 1.4fr;margin-top:16px">
+                <div class="chart-card">
+                    <div class="chart-card-header"><h4>① 세션 상태 분포</h4></div>
+                    <div class="chart-canvas-wrap"><canvas id="chart-session-status"></canvas></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card-header"><h4>② 진입 깔때기 (Funnel)</h4></div>
+                    <div class="chart-canvas-wrap"><canvas id="chart-funnel"></canvas></div>
+                </div>
+            </div>
+
+            <!-- ③ IP Top 4 차트 -->
+            <div class="dash-charts-grid" style="margin-top:16px">
                 <div class="chart-card">
                     <div class="chart-card-header">
-                        <h4>요청(tid 발급) 최다 IP <span class="chart-hint">— 막대 클릭 시 사용자 추적</span></h4>
+                        <h4>③ 요청(tid) 최다 IP <span class="chart-hint">— 막대 클릭 시 사용자 추적</span></h4>
                         <button id="csv-issue" class="ghost" style="font-size:12px;padding:4px 10px">CSV</button>
                     </div>
                     <div class="chart-canvas-wrap"><canvas id="chart-issue"></canvas></div>
                 </div>
                 <div class="chart-card">
                     <div class="chart-card-header">
-                        <h4>총 대기시간 최다 IP<span class="chart-hint"> (초)</span></h4>
+                        <h4>③ 총 대기시간 최다 IP<span class="chart-hint"> (초)</span></h4>
                         <button id="csv-wait" class="ghost" style="font-size:12px;padding:4px 10px">CSV</button>
                     </div>
                     <div class="chart-canvas-wrap"><canvas id="chart-wait"></canvas></div>
                 </div>
                 <div class="chart-card">
                     <div class="chart-card-header">
-                        <h4>대기 중 이탈 최다 IP</h4>
+                        <h4>③ 대기 중 이탈 최다 IP</h4>
                         <button id="csv-qw" class="ghost" style="font-size:12px;padding:4px 10px">CSV</button>
                     </div>
                     <div class="chart-canvas-wrap"><canvas id="chart-qw"></canvas></div>
                 </div>
                 <div class="chart-card">
                     <div class="chart-card-header">
-                        <h4>진입 후 이탈 최다 IP</h4>
+                        <h4>③ 진입 후 이탈 최다 IP</h4>
                         <button id="csv-pe" class="ghost" style="font-size:12px;padding:4px 10px">CSV</button>
                     </div>
                     <div class="chart-canvas-wrap"><canvas id="chart-pe"></canvas></div>
                 </div>
             </div>
-            <!-- 상태코드 분포 도넛 -->
-            <div class="section dash-code-section" id="dash-code-section" style="display:none">
-                <h3 style="margin:0 0 2px">상태코드 분포</h3>
-                <div class="subtle">비정상 응답코드 발생 비율 (200·201 제외)</div>
-                <div class="dash-code-inner">
-                    <canvas id="chart-codes" style="max-width:300px;max-height:300px"></canvas>
+
+            <!-- ③-b IP별 요청·이탈 비교 -->
+            <div class="chart-card" style="margin-top:16px">
+                <div class="chart-card-header">
+                    <h4>③ IP별 요청·이탈 비교 (Top 10) <span class="chart-hint">— 요청 대비 이탈 비율이 높은 IP 식별</span></h4>
+                </div>
+                <div class="chart-canvas-wrap" style="height:300px"><canvas id="chart-ip-compare"></canvas></div>
+            </div>
+
+            <!-- ④ 멀티서버 KPI 비교 (멀티서버 분석 시만 노출) -->
+            <div class="chart-card" id="chart-multiserver-section" style="margin-top:16px;display:none">
+                <div class="chart-card-header"><h4>④ 서버별 KPI 비교</h4></div>
+                <div class="chart-canvas-wrap" style="height:280px"><canvas id="chart-multiserver"></canvas></div>
+            </div>
+
+            <!-- ⑤ 시간대별 트래픽 추이 -->
+            <div class="chart-card" style="margin-top:16px">
+                <div class="chart-card-header"><h4>⑤ 시간대별 트래픽 추이</h4></div>
+                <div class="chart-canvas-wrap" style="height:300px"><canvas id="chart-timeseries"></canvas></div>
+            </div>
+
+            <!-- ⑥ 처리시간 분포 + 상태코드 도넛 -->
+            <div class="dash-charts-grid" style="margin-top:16px">
+                <div class="chart-card">
+                    <div class="chart-card-header"><h4>⑥ 처리시간 분포 (히스토그램)</h4></div>
+                    <div class="chart-canvas-wrap"><canvas id="chart-dur-hist"></canvas></div>
+                </div>
+                <div class="chart-card" id="dash-code-section" style="display:none">
+                    <div class="chart-card-header">
+                        <h4>⑥ 상태코드 분포 <span class="chart-hint">(200·201 제외)</span></h4>
+                    </div>
+                    <div class="dash-code-inner"><canvas id="chart-codes" style="max-width:280px;max-height:280px"></canvas></div>
                 </div>
             </div>
         </div>
@@ -889,7 +928,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-    <script src="{% static 'analyzer/app.js' %}?v=7"></script>
+    <script src="{% static 'analyzer/app.js' %}?v=8"></script>
 </body>
 
 </html>

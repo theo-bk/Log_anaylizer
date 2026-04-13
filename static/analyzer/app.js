@@ -423,6 +423,8 @@
 
     // 서버 서브탭
     renderServerSubTabs(lastServers);
+    // ④ 멀티서버 KPI 비교 (항상 전체 서버 기준)
+    renderMultiServerChart(lastServers);
 
     enableResultTabs();
     bindTabsOnce();
@@ -681,12 +683,246 @@
     });
   }
 
+  // ① 세션 상태 도넛
+  function renderSessionStatusDonut(data) {
+    const el = document.getElementById('chart-session-status');
+    if (!el) return;
+    destroyChart('chart-session-status');
+    const k = data.kpis || {};
+    const done     = k.doneUserCnt || 0;
+    const quitWait = k.quitWaitCnt || 0;
+    const postEnter= k.postEnterLeaveCnt || 0;
+    const ongoing  = Math.max(0, (k.reqUserCnt || 0) - done - quitWait - postEnter);
+    if (!done && !quitWait && !postEnter && !ongoing) return;
+    chartInstances['chart-session-status'] = new Chart(el.getContext('2d'), {
+      type: 'doughnut',
+      data: {
+        labels: ['완료(5004)', '대기중 이탈', '진입후 이탈', '진행중'],
+        datasets: [{ data: [done, quitWait, postEnter, ongoing],
+          backgroundColor: ['#34d399','#f87171','#fb923c','#94a3b8'],
+          borderWidth: 2, borderColor: '#fff' }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { position: 'right', labels: { font: { size: 12 }, padding: 12, boxWidth: 14 } },
+          tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw.toLocaleString('ko-KR')}명` } }
+        }
+      }
+    });
+  }
+
+  // ② 진입 깔때기
+  function renderFunnelChart(data) {
+    const el = document.getElementById('chart-funnel');
+    if (!el) return;
+    destroyChart('chart-funnel');
+    const k = data.kpis || {};
+    const req  = k.reqUserCnt   || 0;
+    const wait = k.waitUserCnt  || 0;
+    const done = k.doneUserCnt  || 0;
+    if (!req) return;
+    chartInstances['chart-funnel'] = new Chart(el.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: ['진입 요청', '대기 발생', '완료(5004)'],
+        datasets: [{
+          data: [req, wait, done],
+          backgroundColor: ['#818cf8','#fb923c','#34d399'],
+          borderRadius: 4, borderSkipped: false,
+        }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `${ctx.parsed.x.toLocaleString('ko-KR')}명` } }
+        },
+        scales: {
+          x: { beginAtZero: true, max: req * 1.05, grid: { color: '#f3f4f6' },
+               ticks: { precision: 0, font: { size: 11 }, color: '#6b7280' } },
+          y: { ticks: { font: { size: 12 }, color: '#1e293b' } }
+        }
+      }
+    });
+  }
+
+  // ③-b IP별 요청·이탈 비교 grouped bar
+  function renderIPCompareChart(data) {
+    const el = document.getElementById('chart-ip-compare');
+    if (!el) return;
+    destroyChart('chart-ip-compare');
+    const top10 = (data.topIssueIP || []).slice(0, 10);
+    if (!top10.length) { el.parentElement.style.height = '60px'; return; }
+    el.parentElement.style.height = '300px';
+    const qwMap = Object.fromEntries((data.topQwIP  || []).map(r => [r.ip, r.count]));
+    const peMap = Object.fromEntries((data.topPeIP  || []).map(r => [r.ip, r.count]));
+    const labels  = top10.map(r => r.ip);
+    chartInstances['chart-ip-compare'] = new Chart(el.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: '요청 수',    data: top10.map(r => r.count),      backgroundColor: '#818cf8', borderRadius: 3, borderSkipped: false },
+          { label: '대기이탈 수', data: top10.map(r => qwMap[r.ip]||0), backgroundColor: '#f87171', borderRadius: 3, borderSkipped: false },
+          { label: '진입이탈 수', data: top10.map(r => peMap[r.ip]||0), backgroundColor: '#fb923c', borderRadius: 3, borderSkipped: false },
+        ]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { font: { size: 12 }, padding: 12, boxWidth: 14 } },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}` } }
+        },
+        scales: {
+          x: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 11 }, color: '#6b7280' } },
+          y: { ticks: { font: { size: 11 }, color: '#1e293b' } }
+        },
+        onClick: (evt, elements) => {
+          if (!elements.length) return;
+          const ip = labels[elements[0].index];
+          if ($traceIp) $traceIp.value = ip;
+          showTab('trace'); doTrace(ip);
+        },
+        onHover: (evt, el) => { document.getElementById('chart-ip-compare').style.cursor = el.length ? 'pointer' : 'default'; }
+      }
+    });
+  }
+
+  // ④ 멀티서버 KPI 비교 (handleResult에서 호출)
+  function renderMultiServerChart(servers) {
+    const section = document.getElementById('chart-multiserver-section');
+    const el = document.getElementById('chart-multiserver');
+    if (!el || !section) return;
+    destroyChart('chart-multiserver');
+    if (!servers || servers.length <= 1) { section.style.display = 'none'; return; }
+    section.style.display = '';
+    const COLORS = ['#818cf8','#fb923c','#34d399','#f87171','#c084fc'];
+    const categories = ['요청 사용자', '대기 발생', '완료', '대기이탈', '진입이탈'];
+    chartInstances['chart-multiserver'] = new Chart(el.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: categories,
+        datasets: servers.map((srv, i) => ({
+          label: srv.label,
+          data: [
+            srv.data.kpis.reqUserCnt, srv.data.kpis.waitUserCnt,
+            srv.data.kpis.doneUserCnt, srv.data.kpis.quitWaitCnt,
+            srv.data.kpis.postEnterLeaveCnt,
+          ],
+          backgroundColor: COLORS[i % COLORS.length],
+          borderRadius: 4, borderSkipped: false,
+        }))
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { font: { size: 12 }, padding: 14, boxWidth: 14 } },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}명` } }
+        },
+        scales: {
+          x: { grid: { color: '#f3f4f6' } },
+          y: { beginAtZero: true, ticks: { precision: 0, font: { size: 11 } } }
+        }
+      }
+    });
+  }
+
+  // ⑤ 시간대별 트래픽 추이
+  function renderTimeSeriesChart(data) {
+    const el = document.getElementById('chart-timeseries');
+    if (!el) return;
+    destroyChart('chart-timeseries');
+    const ts = data.timeSeries || [];
+    if (!ts.length) {
+      el.parentElement.style.height = '60px';
+      const ctx = el.getContext('2d');
+      ctx.clearRect(0, 0, el.width, el.height);
+      return;
+    }
+    el.parentElement.style.height = '300px';
+
+    // 분 단위 라벨 포맷 (HH:MM, 멀티데이면 MM/DD HH:MM)
+    const firstDay = ts[0].time.slice(0, 10);
+    const isMultiDay = ts.some(t => t.time.slice(0, 10) !== firstDay);
+    const labels = ts.map(t => isMultiDay ? t.time.slice(5, 16) : t.time.slice(11, 16));
+
+    chartInstances['chart-timeseries'] = new Chart(el.getContext('2d'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: '요청 수',    data: ts.map(t => t.req),  borderColor: '#818cf8', backgroundColor: 'rgba(129,140,248,.12)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+          { label: '대기 발생',  data: ts.map(t => t.wait), borderColor: '#fb923c', backgroundColor: 'rgba(251,146,60,.10)',  fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+          { label: '완료(5004)', data: ts.map(t => t.done), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.10)',  fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'top', labels: { font: { size: 12 }, padding: 14, boxWidth: 24 } },
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}` } }
+        },
+        scales: {
+          x: { grid: { color: '#f3f4f6' }, ticks: { maxTicksLimit: 24, font: { size: 10 }, color: '#6b7280', maxRotation: 0 } },
+          y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 11 } } }
+        }
+      }
+    });
+  }
+
+  // ⑥ 처리시간 분포 히스토그램
+  function renderDurHistogram(data) {
+    const el = document.getElementById('chart-dur-hist');
+    if (!el) return;
+    destroyChart('chart-dur-hist');
+    const hist = data.durHistogram || [];
+    if (!hist.length || hist.every(b => b.count === 0)) {
+      el.parentElement.style.height = '60px'; return;
+    }
+    el.parentElement.style.height = '260px';
+    const max = Math.max(...hist.map(b => b.count));
+    chartInstances['chart-dur-hist'] = new Chart(el.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels: hist.map(b => b.label),
+        datasets: [{
+          data: hist.map(b => b.count),
+          backgroundColor: hist.map(b => {
+            const ratio = max ? b.count / max : 0;
+            return ratio > 0.7 ? '#f87171' : ratio > 0.4 ? '#fb923c' : '#818cf8';
+          }),
+          borderRadius: 6, borderSkipped: false,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: ctx => `${ctx.raw.toLocaleString('ko-KR')}건` } }
+        },
+        scales: {
+          x: { grid: { display: false }, ticks: { font: { size: 11 }, color: '#374151' } },
+          y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 11 } } }
+        }
+      }
+    });
+  }
+
   function renderDashboard(data) {
+    // ① ②
+    renderSessionStatusDonut(data);
+    renderFunnelChart(data);
+    // ③ IP Top + 비교
     makeHorizBarChart('chart-issue', data.topIssueIP,  '#818cf8');
     makeHorizBarChart('chart-wait',  data.topWaitIP,   '#fb923c', 's');
     makeHorizBarChart('chart-qw',    data.topQwIP,     '#f87171');
     makeHorizBarChart('chart-pe',    data.topPeIP,     '#c084fc');
-
+    renderIPCompareChart(data);
+    // ⑤ ⑥
+    renderTimeSeriesChart(data);
+    renderDurHistogram(data);
     if (data.codeDetails) renderCodeDonut(data.codeDetails);
 
     const csvBind = (id, rows) => {

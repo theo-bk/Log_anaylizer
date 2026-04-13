@@ -9,7 +9,7 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from .parser import analyze_file, compute_range, stat, percent, to_iso
+from .parser import analyze_file, compute_range, stat, percent, to_iso, epoch_to_str
 
 
 # ===== 분석 결과 캐시 (사용자추적 on-demand 조회용) =====
@@ -226,6 +226,37 @@ def merge_results(labeled_results):
     top_qw_ip = top_ip(3)
     top_pe_ip = top_ip(4)
 
+    # 시간대별 시리즈 병합
+    ts_req_m = defaultdict(int)
+    ts_wait_m = defaultdict(int)
+    ts_done_m = defaultdict(int)
+    for _, r in labeled_results:
+        for k, v in (r.get('_raw') or {}).get('ts_req', {}).items():
+            ts_req_m[k] += v
+        for k, v in (r.get('_raw') or {}).get('ts_wait', {}).items():
+            ts_wait_m[k] += v
+        for k, v in (r.get('_raw') or {}).get('ts_done', {}).items():
+            ts_done_m[k] += v
+    _all_min_m = sorted(set(ts_req_m) | set(ts_wait_m) | set(ts_done_m))
+    merged_time_series = [
+        {'time': epoch_to_str(m), 'req': ts_req_m.get(m, 0), 'wait': ts_wait_m.get(m, 0), 'done': ts_done_m.get(m, 0)}
+        for m in _all_min_m
+    ]
+
+    # 처리시간 분포 병합
+    merged_timeout = max((r.get('timeoutSec', 20) for _, r in labeled_results), default=20)
+    if all_durations and merged_timeout > 0:
+        _bsize = merged_timeout / 5
+        _hcnt = [0] * 5
+        for _d in all_durations:
+            _hcnt[min(int(_d / _bsize), 4)] += 1
+        merged_dur_histogram = [
+            {'label': f'{int(i * _bsize)}~{int((i + 1) * _bsize)}초', 'count': _hcnt[i]}
+            for i in range(5)
+        ]
+    else:
+        merged_dur_histogram = []
+
     return {
         'range': {
             'startSec': min(starts) if starts else None,
@@ -255,6 +286,9 @@ def merge_results(labeled_results):
             'quit':  stat(all_dropped),
         },
         'durationStats': stat(all_durations),
+        'timeSeries': merged_time_series,
+        'durHistogram': merged_dur_histogram,
+        'timeoutSec': merged_timeout,
         'topWaitTids':   all_top_pool[:5],
         'codeDetails':   code_details,
         'quitWaitRows':  quit_rows,
