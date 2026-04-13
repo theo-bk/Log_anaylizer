@@ -710,13 +710,13 @@
         responsive: true,
         plugins: {
           legend: { position: 'right', labels: { font: { size: 14 }, padding: 12, boxWidth: 16 } },
-          tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw.toLocaleString('ko-KR')}명` } }
+          tooltip: { callbacks: { label: ctx => `${ctx.label}: ${ctx.raw.toLocaleString('ko-KR')}건` } }
         }
       }
     });
   }
 
-  // ② 진입 깔때기
+  // ② 진입 요청 결과(Funnel)
   function renderFunnelChart(data) {
     const el = document.getElementById('chart-funnel');
     if (!el) return;
@@ -740,7 +740,7 @@
         indexAxis: 'y', responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { display: false },
-          tooltip: { callbacks: { label: ctx => `${ctx.parsed.x.toLocaleString('ko-KR')}명` } }
+          tooltip: { callbacks: { label: ctx => `${ctx.parsed.x.toLocaleString('ko-KR')}건` } }
         },
         scales: {
           x: { beginAtZero: true, max: req * 1.05, grid: { color: '#f3f4f6' },
@@ -825,7 +825,7 @@
         responsive: true, maintainAspectRatio: false,
         plugins: {
           legend: { position: 'top', labels: { font: { size: 14 }, padding: 14, boxWidth: 16 } },
-          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}명` } }
+          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}건` } }
         },
         scales: {
           x: { grid: { color: '#f3f4f6' } },
