@@ -632,7 +632,10 @@
             grid: { color: '#f3f4f6' },
             ticks: { precision: 0, font: { size: 11 }, color: '#6b7280' }
           },
-          y: { ticks: { font: { size: 11 }, color: '#1e293b' } }
+          y: {
+            ticks: { font: { size: 11 }, color: '#1e293b' },
+            afterFit: (scale) => { scale.width = Math.max(scale.width, 130); }
+          }
         },
         onClick: (evt, elements) => {
           if (!elements.length) return;
@@ -673,8 +676,9 @@
       },
       options: {
         responsive: true,
+        maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'right', labels: { font: { size: 12 }, padding: 14, boxWidth: 14 } },
+          legend: { position: 'bottom', labels: { font: { size: 12 }, padding: 16, boxWidth: 14 } },
           tooltip: {
             callbacks: { label: ctx => `${ctx.raw.toLocaleString('ko-KR')}건` }
           }
@@ -754,7 +758,7 @@
     destroyChart('chart-ip-compare');
     const top10 = (data.topIssueIP || []).slice(0, 10);
     if (!top10.length) { el.parentElement.style.height = '60px'; return; }
-    el.parentElement.style.height = '300px';
+    el.parentElement.style.height = '360px';
     const qwMap = Object.fromEntries((data.topQwIP  || []).map(r => [r.ip, r.count]));
     const peMap = Object.fromEntries((data.topPeIP  || []).map(r => [r.ip, r.count]));
     const labels  = top10.map(r => r.ip);
@@ -776,7 +780,10 @@
         },
         scales: {
           x: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 11 }, color: '#6b7280' } },
-          y: { ticks: { font: { size: 11 }, color: '#1e293b' } }
+          y: {
+            ticks: { font: { size: 11 }, color: '#1e293b' },
+            afterFit: (scale) => { scale.width = Math.max(scale.width, 130); }
+          }
         },
         onClick: (evt, elements) => {
           if (!elements.length) return;
@@ -840,7 +847,7 @@
       ctx.clearRect(0, 0, el.width, el.height);
       return;
     }
-    el.parentElement.style.height = '300px';
+    el.parentElement.style.height = '360px';
 
     // 분 단위 라벨 포맷 (HH:MM, 멀티데이면 MM/DD HH:MM)
     const firstDay = ts[0].time.slice(0, 10);
@@ -865,7 +872,7 @@
           tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}` } }
         },
         scales: {
-          x: { grid: { color: '#f3f4f6' }, ticks: { maxTicksLimit: 24, font: { size: 10 }, color: '#6b7280', maxRotation: 0 } },
+          x: { grid: { color: '#f3f4f6' }, ticks: { maxTicksLimit: 12, font: { size: 10 }, color: '#6b7280', maxRotation: 45, minRotation: 0 } },
           y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 11 } } }
         }
       }
@@ -958,7 +965,7 @@
   const OPCODE_CFG = {
     '5101':      '즉시진입',
     '5002':      '대기후진입',
-    '5101+5002': '즉시+대기',
+    '5101+5002': '대기+즉시',
     '-':         '-',
   };
 
