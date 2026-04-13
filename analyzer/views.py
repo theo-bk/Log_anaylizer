@@ -353,11 +353,15 @@ def range_by_path(request):
     first_ts = None
     last_ts = None
 
-    from .parser import parse_timestamp
+    from .parser import parse_timestamp, _SID_RE, _AID_RE, to_iso
+
+    sids = set()
+    aids = set()
+    field_scanned = 0
 
     with open(file_path, 'r', encoding='utf-8', errors='replace') as fh:
         for i, line in enumerate(fh):
-            if i >= 100:
+            if i >= 200_000:
                 break
             dt = parse_timestamp(line)
             if dt:
@@ -366,6 +370,14 @@ def range_by_path(request):
                     first_ts = sec
                 if last_ts is None or sec > last_ts:
                     last_ts = sec
+            if field_scanned < 200_000 and 'ts.wseq' in line:
+                field_scanned += 1
+                m3 = _SID_RE.search(line)
+                m4 = _AID_RE.search(line)
+                if m3:
+                    sids.add(m3.group(1))
+                if m4:
+                    aids.add(m4.group(1))
 
     tail_size = min(file_size, 50 * 1024)
     with open(file_path, 'rb') as fh:
@@ -381,7 +393,6 @@ def range_by_path(request):
             if last_ts is None or sec > last_ts:
                 last_ts = sec
 
-    from .parser import to_iso
     return JsonResponse({
         'startSec': first_ts,
         'endSec': last_ts,
@@ -389,6 +400,8 @@ def range_by_path(request):
         'endISO': to_iso(last_ts),
         'fileSize': file_size,
         'fileSizeMB': round(file_size / 1024 / 1024, 1),
+        'sids': sorted(sids),
+        'aids': sorted(aids),
     })
 
 

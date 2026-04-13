@@ -133,6 +133,41 @@
   const fmtPct = (n) => Number.isFinite(n) ? `${n.toFixed(2)}%` : '0.00%';
   const fmt2 = (n) => Number.isFinite(n) ? Number(n).toFixed(2) : '0.00';
 
+  // ====== 프로젝트/세그먼트 셀렉트박스 관리 ======
+  let serverFieldCache = {};   // idx → {sids: [], aids: []}
+
+  function populateSelects() {
+    const $pj  = document.getElementById('project');
+    const $seg = document.getElementById('segment');
+    if (!$pj || !$seg) return;
+
+    const allSids = new Set();
+    const allAids = new Set();
+    Object.values(serverFieldCache).forEach(({ sids, aids }) => {
+      sids.forEach(s => allSids.add(s));
+      aids.forEach(a => allAids.add(a));
+    });
+
+    const prevPj  = $pj.value;
+    const prevSeg = $seg.value;
+
+    $pj.innerHTML = '<option value="">전체</option>';
+    [...allSids].sort().forEach(sid => {
+      const opt = document.createElement('option');
+      opt.value = sid; opt.textContent = sid;
+      $pj.appendChild(opt);
+    });
+    if ([...$pj.options].some(o => o.value === prevPj)) $pj.value = prevPj;
+
+    $seg.innerHTML = '<option value="">전체</option>';
+    [...allAids].sort().forEach(aid => {
+      const opt = document.createElement('option');
+      opt.value = aid; opt.textContent = aid;
+      $seg.appendChild(opt);
+    });
+    if ([...$seg.options].some(o => o.value === prevSeg)) $seg.value = prevSeg;
+  }
+
   // ====== 서버 목록 관리 ======
   let serverDebounces = {};
   let serverRanges   = {};  // idx → range object
@@ -170,25 +205,36 @@
         </div>
       </div>`;
 
-    // 경로 입력 → 범위 탐지
+    // 경로 입력 → 범위 탐지 + sid/aid 스캔
     const pathEl  = div.querySelector('.srv-path');
     const infoEl  = div.querySelector('.srv-fileinfo');
     pathEl.addEventListener('input', () => {
       clearTimeout(serverDebounces[idx]);
       serverDebounces[idx] = setTimeout(async () => {
         const path = pathEl.value.trim();
-        if (!path) { serverRanges[idx] = null; updateGlobalRange(); return; }
+        if (!path) {
+          serverRanges[idx] = null;
+          delete serverFieldCache[idx];
+          updateGlobalRange();
+          populateSelects();
+          return;
+        }
         try {
           const resp = await fetch(`/api/range_path/?path=${encodeURIComponent(path)}`);
           const data = await resp.json();
-          if (data.error) { infoEl.textContent = data.error; serverRanges[idx] = null; }
-          else { infoEl.textContent = `(${data.fileSizeMB} MB)`; serverRanges[idx] = data; }
+          if (data.error) { infoEl.textContent = data.error; serverRanges[idx] = null; delete serverFieldCache[idx]; }
+          else {
+            infoEl.textContent = `(${data.fileSizeMB} MB)`;
+            serverRanges[idx] = data;
+            serverFieldCache[idx] = { sids: data.sids || [], aids: data.aids || [] };
+          }
           updateGlobalRange();
+          populateSelects();
         } catch { infoEl.textContent = '경로 확인 실패'; }
       }, 500);
     });
 
-    // 파일 업로드 → 범위 탐지
+    // 파일 업로드 → 범위 탐지 + sid/aid 스캔
     const fileEl     = div.querySelector('.srv-file');
     const fileNameEl = div.querySelector('.srv-filename');
     fileEl.addEventListener('change', async () => {
@@ -201,7 +247,9 @@
         const resp = await fetch('/api/range/', { method: 'POST', body: fd });
         const data = await resp.json();
         serverRanges[idx] = { ...data, fileSizeMB: f.size / 1024 / 1024 };
+        serverFieldCache[idx] = { sids: data.sids || [], aids: data.aids || [] };
         updateGlobalRange();
+        populateSelects();
         hideProgress();
       } catch { hideProgress(); }
     });
@@ -209,8 +257,10 @@
     // 제거 버튼
     div.querySelector('.remove-srv').addEventListener('click', () => {
       delete serverRanges[idx];
+      delete serverFieldCache[idx];
       div.remove();
       updateGlobalRange();
+      populateSelects();
       refreshRemoveButtons();
     });
 

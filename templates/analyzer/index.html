@@ -52,12 +52,18 @@
         input[type="number"],
         input[type="file"],
         input[type="date"],
-        input[type="time"] {
+        input[type="time"],
+        select {
             padding: 12px;
             border: 1px solid #e5e7eb;
             border-radius: 10px;
             background: #fff;
             font-size: 16px
+        }
+
+        select {
+            width: 100%;
+            cursor: pointer
         }
 
         button {
@@ -541,11 +547,15 @@
                         </div>
                         <div>
                             <label for="project">프로젝트 ID</label><br />
-                            <input id="project" type="text" placeholder="예: service_1" />
+                            <select id="project">
+                                <option value="">전체</option>
+                            </select>
                         </div>
                         <div>
-                            <label for="segment">세그먼트 ID (비우면 전체)</label><br />
-                            <input id="segment" type="text" placeholder="예: test" />
+                            <label for="segment">세그먼트 ID</label><br />
+                            <select id="segment">
+                                <option value="">전체</option>
+                            </select>
                         </div>
                         <div>
                             <label for="timeoutSec">처리시간 최대 타임아웃(초)</label><br />
@@ -840,7 +850,7 @@
         </div>
     </div>
 
-    <script src="{% static 'analyzer/app.js' %}?v=5"></script>
+    <script src="{% static 'analyzer/app.js' %}?v=6"></script>
 </body>
 
 </html>

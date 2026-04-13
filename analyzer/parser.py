@@ -128,9 +128,13 @@ def percent(part, total):
 
 # ===================== Range Scanner =====================
 
-def compute_range(lines_iter):
+def compute_range(lines_iter, max_field_scan=200_000):
+    """타임스탬프 범위를 스캔하면서 sid(프로젝트)/aid(세그먼트) 고유값도 수집."""
     first_ts = None
     last_ts = None
+    sids = set()
+    aids = set()
+    field_scanned = 0
     for raw_line in lines_iter:
         line = raw_line.rstrip('\r\n') if isinstance(raw_line, str) else raw_line.decode('utf-8', errors='replace').rstrip('\r\n')
         dt = parse_timestamp(line)
@@ -140,9 +144,18 @@ def compute_range(lines_iter):
                 first_ts = sec
             if last_ts is None or sec > last_ts:
                 last_ts = sec
+        if field_scanned < max_field_scan and 'ts.wseq' in line:
+            field_scanned += 1
+            m3 = _SID_RE.search(line)
+            m4 = _AID_RE.search(line)
+            if m3:
+                sids.add(m3.group(1))
+            if m4:
+                aids.add(m4.group(1))
     return {
         'startSec': first_ts, 'endSec': last_ts,
         'startISO': to_iso(first_ts), 'endISO': to_iso(last_ts),
+        'sids': sorted(sids), 'aids': sorted(aids),
     }
 
 
