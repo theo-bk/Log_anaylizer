@@ -28,10 +28,10 @@ def to_iso(sec):
 
 
 def epoch_to_str(sec):
-    """epoch seconds → 'YYYY-MM-DD HH:MM:SS' (UTC)."""
+    """epoch seconds → 'YYYY-MM-DD HH:MM:SS' (KST = UTC+9)."""
     if not sec:
         return ''
-    dt = datetime.utcfromtimestamp(sec)
+    dt = datetime.utcfromtimestamp(sec + 32400)  # UTC+9 (KST)
     return f'{dt.year:04d}-{dt.month:02d}-{dt.day:02d} {dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}'
 
 
@@ -76,8 +76,10 @@ def parse_core_fields(parts):
     return tid, int(status_str), proj_seg
 
 
-# ---- Opcode ----
+# ---- Opcode / sid / aid ----
 _OPCODE_RE = re.compile(r'opcode=(\d+)')
+_SID_RE    = re.compile(r'sid=([^&\s"]+)')
+_AID_RE    = re.compile(r'aid=([^&\s"]+)')
 
 
 def extract_opcode(url):
@@ -151,6 +153,7 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
                  ttl_sec=180, keep_sec=15,
                  rps_enabled=False, rps_min=1, rps_max=10,
                  hold_enabled=False, hold_sec=60,
+                 timeout_sec=20,
                  progress_callback=None):
     target_proj_seg = f'{pj}.{seg}' if pj and seg and not seg_all else None
 
@@ -158,10 +161,14 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
     TTL_MAX = max(TTL_MIN, rps_max) if rps_enabled else 10
     KEEP_ORDER = max(TTL_MAX, hold_sec) if hold_enabled else 60
 
-    # per-tid session: use list [ip, flags, start_sec, wait_end_sec, last_req_sec]
+    # 세션 키: (sid, aid, tid) 복합키 — 같은 tid라도 sid·aid가 다르면 별개 세션
+    # session value: list [ip, flags, start_sec, wait_end_sec, last_req_sec]
     # flags: bit 0=has_5101, bit 1=has_5002, bit 2=has_5004
     # Index: 0=ip, 1=flags, 2=start_sec, 3=wait_end_sec, 4=last_req_sec
     sessions = {}
+    # 5004 fallback용 보조 인덱스: raw_tid → [composite_key, ...]
+    # 5004 URL에 sid/aid 가 없거나 달라 정확한 복합키 조회 실패 시 사용
+    tid_index = defaultdict(list)
 
     tids_with_5101 = set()
     tids_with_5002 = set()
@@ -171,7 +178,6 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
     entry_ips = set()
 
     gaps_5002 = []
-    server_stats = defaultdict(lambda: [0, 0, 0])  # [issue, wait, ret]
 
     code_cnt = defaultdict(int)
     code_map = defaultdict(list)
@@ -238,20 +244,39 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
             continue
         opcode = int(m2.group(1))
 
+        # sid / aid 추출 → 세션 복합키 (같은 tid여도 sid·aid가 다르면 별개 세션)
+        m3 = _SID_RE.search(url)
+        m4 = _AID_RE.search(url)
+        sid = m3.group(1) if m3 else ''
+        aid = m4.group(1) if m4 else ''
+        session_key = (sid, aid, tid)
+
         # IP (first token)
         client_ip = parts[0]
 
-        # session (list-based for speed)
-        sess = sessions.get(tid)
+        # session lookup — 5004는 URL에 sid/aid 가 없을 수 있으므로 fallback 탐색
+        sess = sessions.get(session_key)
         if sess is None:
-            sess = [client_ip, 0, 0, 0, 0]  # ip, flags, start, wait_end, last_req
-            sessions[tid] = sess
-        else:
-            sess[0] = client_ip
+            if opcode == 5004:
+                # 정확한 복합키 없음 → 동일 raw tid 의 미완료 세션 중 탐색
+                for candidate_key in reversed(tid_index.get(tid, [])):
+                    candidate = sessions.get(candidate_key)
+                    if candidate and (candidate[1] & 3) and not (candidate[1] & 4):
+                        session_key = candidate_key
+                        sess = candidate
+                        break
+                if sess is None:
+                    continue  # 매칭 세션 없음, 이 라인 스킵
+            else:
+                sess = [client_ip, 0, 0, 0, 0]  # ip, flags, start, wait_end, last_req
+                sessions[session_key] = sess
+                tid_index[tid].append(session_key)
+
+        sess[0] = client_ip
 
         if opcode == 5101:
             sess[1] |= 1  # has_5101
-            tids_with_5101.add(tid)
+            tids_with_5101.add(session_key)
             entry_ips.add(client_ip)
             if sess[2] == 0 or tsec < sess[2]:
                 sess[2] = tsec
@@ -259,9 +284,16 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
 
         elif opcode == 5002:
             if status_code not in (200, 201):
+                code_key = str(status_code)
+                code_cnt[code_key] += 1
+                if len(code_map[code_key]) < 500:
+                    code_map[code_key].append({
+                        'timestamp': epoch_to_str(tsec), 'ip': client_ip,
+                        'status': code_key, 'user': f'{client_ip}#{tid}',
+                    })
                 continue
             sess[1] |= 2  # has_5002
-            tids_with_5002.add(tid)
+            tids_with_5002.add(session_key)
             entry_ips.add(client_ip)
             if sess[2] == 0 or tsec < sess[2]:
                 sess[2] = tsec
@@ -273,25 +305,17 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
                 gaps_5002.append(tsec - sess[4])
             sess[4] = tsec
 
-            # sticky/server
-            ms = _STICKY_RE.search(raw_line)
-            if ms:
-                srv = ms.group(1).lower()
-                if status_code == 200:
-                    server_stats[srv][0] += 1
-                else:
-                    server_stats[srv][1] += 1
-
         elif opcode == 5004:
             sess[1] |= 4  # has_5004
-            tids_with_5004.add(tid)
+            tids_with_5004.add(session_key)
+            sess[4] = tsec  # 5004 완료 시각 기록
 
         # 집합 관리
         if opcode in (5101, 5002):
             if status_code == 201:
-                wait_user_tids.add(tid)
+                wait_user_tids.add(session_key)
             if status_code == 200:
-                entry_success_tids.add(tid)
+                entry_success_tids.add(session_key)
 
         # 상태코드 집계 (200/201 이외)
         if status_code not in (200, 201):
@@ -324,12 +348,6 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
     qw_rate = percent(dropout_count_201, wait_count)
     pe_rate = percent(dropout_count_200, len(entry_success_tids))
 
-    server_rows = sorted(
-        [{'server': srv, 'issue_200': v[0], 'wait_201': v[1], 'return_502': v[2]}
-         for srv, v in server_stats.items()],
-        key=lambda r: r['issue_200'] + r['wait_201'], reverse=True,
-    )
-
     code_details = sorted(
         [{'code': code, 'cnt': len(rows), 'rows': rows} for code, rows in code_map.items()],
         key=lambda x: x['cnt'], reverse=True,
@@ -340,13 +358,16 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
     # ---- 단일 순회: 대기시간 + CSV + IP통계 + 역인덱스 ----
     returned_wait_times = []
     dropped_wait_times = []
+    top_wait_tids_list = []
+    all_durations = []
     quit_wait_rows = []
     post_enter_rows = []
     ip_counts = defaultdict(lambda: [0, 0, 0, 0, 0, 0.0])
     ip_times = {}  # ip -> (min_sec, max_sec)
     ip_to_tids_map = defaultdict(list)
 
-    for tid_key, s in sessions.items():
+    for sess_key, s in sessions.items():
+        _sid, _aid, tid_k = sess_key   # 복합키 언패킹 — tid_k 가 표시용 원래 tid
         ip = s[0]
         flags = s[1]
         st = s[2]
@@ -359,32 +380,45 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
         if has_wait:
             (returned_wait_times if has_5004 else dropped_wait_times).append(wait_secs)
 
-        if tid_key in dropout_tids_201:
+        # 세션 전체 처리시간: start_sec → last_req_sec(5004 포함)
+        last = s[4]
+        duration = (last - st) if (st and last and last > st) else 0
+        if duration > 0 and duration <= timeout_sec:
+            all_durations.append(duration)
+            top_wait_tids_list.append({
+                'tid': tid_k, 'ip': ip or '',
+                'wait_secs': round(duration, 1),
+                'start_time': epoch_to_str(st),
+                'timestamp': epoch_to_str(last),
+                'server': '',  # views.py에서 서버 라벨로 채워짐
+            })
+
+        if sess_key in dropout_tids_201:
             quit_wait_rows.append({
                 'timestamp': epoch_to_str(we or st),
-                'ip': ip or '', 'tid': tid_key,
+                'ip': ip or '', 'tid': tid_k,
                 'status': 'WAIT(201)_NO_5004',
             })
-        elif tid_key in dropout_tids_200:
+        elif sess_key in dropout_tids_200:
             post_enter_rows.append({
                 'timestamp': epoch_to_str(we or st),
-                'ip': ip or '', 'tid': tid_key,
+                'ip': ip or '', 'tid': tid_k,
                 'status': 'ENTER(200)_NO_5004',
             })
 
         if not ip:
             continue
-        ip_to_tids_map[ip].append(tid_key)
+        ip_to_tids_map[ip].append(sess_key)
         c = ip_counts[ip]
-        if tid_key in entry_success_tids:
+        if sess_key in entry_success_tids:
             c[0] += 1
-        if tid_key in wait_user_tids:
+        if sess_key in wait_user_tids:
             c[1] += 1
         if has_5004:
             c[2] += 1
-        if tid_key in dropout_tids_201:
+        if sess_key in dropout_tids_201:
             c[3] += 1
-        if tid_key in dropout_tids_200:
+        if sess_key in dropout_tids_200:
             c[4] += 1
         if has_wait:
             c[5] += wait_secs
@@ -412,6 +446,9 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
     top_qw_ip = top_ip(3)
     top_pe_ip = top_ip(4)
 
+    top_wait_tids_list.sort(key=lambda x: x['wait_secs'], reverse=True)
+    top_wait_tids = top_wait_tids_list[:5]
+
     return {
         'range': {
             'startSec': first_ts_sec, 'endSec': last_ts_sec,
@@ -426,6 +463,7 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
             'postEnterLeaveCnt': dropout_count_200,
             'qwRate': qw_rate,
             'peRate': pe_rate,
+            'entrySuccessCount': len(entry_success_tids),  # merge 시 peRate 재계산용
         },
         'rpsStats': {
             'all': stat(gaps_5002),
@@ -437,8 +475,22 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
             'enter': stat(returned_wait_times),
             'quit': stat(dropped_wait_times),
         },
-        'serverRows': server_rows,
+        'durationStats': stat(all_durations),
+        'topWaitTids': top_wait_tids,
         'codeDetails': code_details,
+        # ---- 멀티서버 merge용 raw 데이터 (응답에서 _strip_internal로 제거됨) ----
+        '_raw': {
+            'gaps': gaps_5002,
+            'over_ttlmax': over_ttlmax_gaps,
+            'between': between_ttl_keep_gaps,
+            'over_keep': over_keep_gaps,
+            'returned_wait': returned_wait_times,
+            'dropped_wait': dropped_wait_times,
+            'durations': all_durations,
+            'entry_ips': list(entry_ips),
+            'top_wait_pool': top_wait_tids_list[:50],  # top 5보다 큰 pool (merge 재순위용)
+            'code_cnt': dict(code_cnt),                # 실제 발생 건수 (500개 캡 미적용)
+        },
         'quitWaitRows': quit_wait_rows,
         'postEnterRows': post_enter_rows,
         'anomRows': anom_rows,

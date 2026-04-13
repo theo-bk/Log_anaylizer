@@ -1,12 +1,8 @@
-// app.js — Django API를 fetch()/SSE로 호출하는 프론트엔드.
-// 소용량: 파일 업로드 방식, 대용량(3GB+): 서버 경로 입력 + SSE 방식.
+// app.js — 멀티서버 로그 분석 지원 버전
 (function () {
   const $ = (sel) => document.querySelector(sel);
 
-  // ====== 엘리먼트 ======
-  const $file       = $('#fileInput');
-  const $filePath   = $('#filePath');
-  const $fileName   = $('#fileName');
+  // ====== 고정 엘리먼트 ======
   const $project    = $('#project');
   const $segment    = $('#segment');
 
@@ -46,50 +42,39 @@
   const $k_pe_rate   = $('#kpi-pe-rate');
 
   const $codeCards   = $('#codeCards');
-  const $serverTable = document.querySelector('#serverTable tbody');
+
+  // 대시보드 필터
+  const $dashFrom       = $('#dash-from');
+  const $dashTo         = $('#dash-to');
+  const $dashFilterBtn  = $('#dashFilterBtn');
+  const $dashResetBtn   = $('#dashResetBtn');
+  const $dashFilterHint = $('#dashFilterHint');
 
   // 탭/패널
-  const $tabAnalyze  = document.querySelector('.tab[data-tab="analyze"]');
   const $tabTrace    = document.querySelector('.tab[data-tab="trace"]');
   const $tabDash     = document.querySelector('.tab[data-tab="dash"]');
   const $panelAnalyze= $('#panel-analyze');
   const $panelTrace  = $('#panel-trace');
   const $panelDash   = $('#panel-dash');
 
-const CODE_DESC = {
-  // 서버사이드 제어 (3xx)
-  '300': 'ServerSide Bypass',
-  '301': 'ServerSide Block',
-  '302': 'ServerSide IP Block',
-  '303': 'ServerSide Express Number',
-
-  // 트랜잭션 오류 (5xx)
-  '500': 'Uservice 없음',
-  '501': 'Action 없음',
-  '502': '이미 종료된 key',
-  '503': '다른 서버에서 발급된 키',
-  '504': '너무 많은 재발급 횟수',
-  '505': 'Key가 존재하지 않음',
-  '506': '잘못된 ID 입력',
-  '507': '잘못된 Key 입력',
-  '509': 'ID가 이미 존재함',
-  '513': '라이센스 수를 넘는 요청',
-  '516': 'Current값보다 큰 Key값',
-  '517': '잘못된 IP로부터의 요청',
-
-  // 시스템/공통 오류 (9xx)
-  '900': '인증처리 오류',
-  '991': 'I/O 에러',
-  '992': '이미 실행중',
-  '993': '권한이 없음',
-  '994': '만료 날짜 경과',
-  '995': '횟수 제한 초과',
-  '997': '시스템 중지중',
-  '999': '시스템 에러',
-};
+  const CODE_DESC = {
+    '300': 'ServerSide Bypass',   '301': 'ServerSide Block',
+    '302': 'ServerSide IP Block', '303': 'ServerSide Express Number',
+    '500': 'Uservice 없음',       '501': 'Action 없음',
+    '502': '이미 종료된 key',     '503': '다른 서버에서 발급된 키',
+    '504': '너무 많은 재발급 횟수','505': 'Key가 존재하지 않음',
+    '506': '잘못된 ID 입력',      '507': '잘못된 Key 입력',
+    '509': 'ID가 이미 존재함',    '513': '라이센스 수를 넘는 요청',
+    '516': 'Current값보다 큰 Key값','517': '잘못된 IP로부터의 요청',
+    '900': '인증처리 오류',       '991': 'I/O 에러',
+    '992': '이미 실행중',         '993': '권한이 없음',
+    '994': '만료 날짜 경과',      '995': '횟수 제한 초과',
+    '997': '시스템 중지중',       '999': '시스템 에러',
+  };
 
   let lastResult = null;
-  let currentSSE = null; // SSE abort용
+  let lastServers = [];   // [{label, data}, ...]
+  let currentSSE = null;
 
   // ====== CSV helper ======
   function downloadCSV(filename, rows, headers) {
@@ -111,7 +96,6 @@ const CODE_DESC = {
     if (isNaN(d.getTime())) return { d: '', t: '' };
     return { d: `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`, t: `${pad2(d.getHours())}:${pad2(d.getMinutes())}` };
   };
-
   const setProgress = (p, extra) => {
     if ($progressSection?.classList.contains('hidden')) $progressSection.classList.remove('hidden');
     const txt = extra ? `${p}% — ${extra}` : `${p}%`;
@@ -124,7 +108,6 @@ const CODE_DESC = {
     if ($progressText) $progressText.textContent = '0%';
     if ($progressBar)  $progressBar.value = 0;
   };
-
   const setDetectedRange = (d) => {
     const a = toLocalParts(d.startISO);
     const b = toLocalParts(d.endISO);
@@ -134,9 +117,8 @@ const CODE_DESC = {
     if ($timeEnd && b.t) $timeEnd.value = b.t;
     if ($rangeStart) $rangeStart.textContent = d.startISO || '-';
     if ($rangeEnd)   $rangeEnd.textContent   = d.endISO   || '-';
-    if ($fileInfo && d.fileSizeMB) $fileInfo.textContent = `(${d.fileSizeMB} MB)`;
+    if ($fileInfo && d.fileSizeMB != null) $fileInfo.textContent = `(총 ${d.fileSizeMB} MB)`;
   };
-
   const toEpochFromInputs = () => {
     const ds = $dateStart?.value, ts = $timeStart?.value;
     const de = $dateEnd?.value,   te = $timeEnd?.value;
@@ -147,56 +129,127 @@ const CODE_DESC = {
       endSec:   e && !isNaN(e.getTime()) ? Math.floor(e.getTime() / 1000) : undefined,
     };
   };
-
   const fmt = (n) => Number.isFinite(n) ? n.toLocaleString('ko-KR') : '0';
   const fmtPct = (n) => Number.isFinite(n) ? `${n.toFixed(2)}%` : '0.00%';
   const fmt2 = (n) => Number.isFinite(n) ? Number(n).toFixed(2) : '0.00';
 
-  // ====== 입력 모드 ======
-  function getInputMode() {
-    const path = $filePath?.value?.trim();
-    if (path) return 'path';
-    const f = $file?.files?.[0];
-    if (f) return 'upload';
-    return null;
+  // ====== 서버 목록 관리 ======
+  let serverDebounces = {};
+  let serverRanges   = {};  // idx → range object
+
+  function updateGlobalRange() {
+    const ranges = Object.values(serverRanges).filter(Boolean);
+    if (!ranges.length) return;
+    const starts = ranges.map(r => r.startISO).filter(Boolean).sort();
+    const ends   = ranges.map(r => r.endISO).filter(Boolean).sort();
+    if (!starts.length || !ends.length) return;
+    const totalMB = ranges.reduce((s, r) => s + (r.fileSizeMB || 0), 0);
+    setDetectedRange({ startISO: starts[0], endISO: ends[ends.length - 1], fileSizeMB: totalMB.toFixed(1) });
   }
 
-  // ====== 경로 입력 → 범위 자동 탐지 ======
-  let pathDebounce = null;
-  $filePath?.addEventListener('input', () => {
-    clearTimeout(pathDebounce);
-    pathDebounce = setTimeout(async () => {
-      const path = $filePath.value.trim();
-      if (!path) return;
-      try {
-        const resp = await fetch(`/api/range_path/?path=${encodeURIComponent(path)}`);
-        const data = await resp.json();
-        if (data.error) { if ($fileInfo) $fileInfo.textContent = data.error; return; }
-        setDetectedRange(data);
-      } catch (e) {
-        if ($fileInfo) $fileInfo.textContent = '경로 확인 실패';
-      }
-    }, 500);
-  });
+  function createServerRow(idx) {
+    const div = document.createElement('div');
+    div.className = 'server-item';
+    div.dataset.idx = idx;
+    div.innerHTML = `
+      <div class="server-header">
+        <span class="server-num">서버 ${idx + 1}</span>
+        <input class="srv-label server-label-input" type="text" value="서버 ${idx + 1}" placeholder="라벨" />
+        <button type="button" class="remove-srv ghost" style="font-size:12px;padding:4px 8px;margin-left:auto">제거</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div>
+          <label style="font-size:12px;color:#6b7280">파일 경로 (대용량 추천)</label><br/>
+          <input class="srv-path" type="text" placeholder="예: /var/log/access.log" style="width:100%;font-size:14px"/>
+          <div class="srv-fileinfo subtle" style="font-size:12px"></div>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#6b7280">또는 파일 업로드</label><br/>
+          <input class="srv-file" type="file" accept=".txt,.log"/>
+          <div class="srv-filename subtle" style="font-size:12px">선택된 파일 없음</div>
+        </div>
+      </div>`;
 
-  // 파일 업로드 → 범위 (소용량)
-  $file?.addEventListener('change', async () => {
-    const f = $file.files?.[0];
-    if (!f) return;
-    if ($fileName) $fileName.textContent = `${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB)`;
-    setProgress(10);
-    const fd = new FormData();
-    fd.append('file', f);
-    try {
-      const resp = await fetch('/api/range/', { method: 'POST', body: fd });
-      const data = await resp.json();
-      setDetectedRange(data);
-      hideProgress();
-    } catch (err) {
-      alert('범위 탐지 실패: ' + err.message);
-      hideProgress();
-    }
-  });
+    // 경로 입력 → 범위 탐지
+    const pathEl  = div.querySelector('.srv-path');
+    const infoEl  = div.querySelector('.srv-fileinfo');
+    pathEl.addEventListener('input', () => {
+      clearTimeout(serverDebounces[idx]);
+      serverDebounces[idx] = setTimeout(async () => {
+        const path = pathEl.value.trim();
+        if (!path) { serverRanges[idx] = null; updateGlobalRange(); return; }
+        try {
+          const resp = await fetch(`/api/range_path/?path=${encodeURIComponent(path)}`);
+          const data = await resp.json();
+          if (data.error) { infoEl.textContent = data.error; serverRanges[idx] = null; }
+          else { infoEl.textContent = `(${data.fileSizeMB} MB)`; serverRanges[idx] = data; }
+          updateGlobalRange();
+        } catch { infoEl.textContent = '경로 확인 실패'; }
+      }, 500);
+    });
+
+    // 파일 업로드 → 범위 탐지
+    const fileEl     = div.querySelector('.srv-file');
+    const fileNameEl = div.querySelector('.srv-filename');
+    fileEl.addEventListener('change', async () => {
+      const f = fileEl.files?.[0];
+      if (!f) return;
+      fileNameEl.textContent = `${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB)`;
+      setProgress(10);
+      const fd = new FormData(); fd.append('file', f);
+      try {
+        const resp = await fetch('/api/range/', { method: 'POST', body: fd });
+        const data = await resp.json();
+        serverRanges[idx] = { ...data, fileSizeMB: f.size / 1024 / 1024 };
+        updateGlobalRange();
+        hideProgress();
+      } catch { hideProgress(); }
+    });
+
+    // 제거 버튼
+    div.querySelector('.remove-srv').addEventListener('click', () => {
+      delete serverRanges[idx];
+      div.remove();
+      updateGlobalRange();
+      refreshRemoveButtons();
+    });
+
+    return div;
+  }
+
+  function refreshRemoveButtons() {
+    const items = document.querySelectorAll('#serverList .server-item');
+    items.forEach(item => {
+      const btn = item.querySelector('.remove-srv');
+      if (btn) btn.style.display = items.length > 1 ? '' : 'none';
+    });
+  }
+
+  function getServerInputs() {
+    const servers = [];
+    document.querySelectorAll('#serverList .server-item').forEach(item => {
+      const label = (item.querySelector('.srv-label')?.value?.trim()) || `서버 ${servers.length + 1}`;
+      const path  = item.querySelector('.srv-path')?.value?.trim() || '';
+      const file  = item.querySelector('.srv-file')?.files?.[0] || null;
+      if (path || file) servers.push({ label, path, file });
+    });
+    return servers;
+  }
+
+  // 초기 서버 1개 생성
+  (function initServerList() {
+    const list = document.getElementById('serverList');
+    if (!list) return;
+    list.appendChild(createServerRow(0));
+    refreshRemoveButtons();
+
+    document.getElementById('addServerBtn')?.addEventListener('click', () => {
+      const items = list.querySelectorAll('.server-item');
+      const nextIdx = Math.max(...[...items].map(el => parseInt(el.dataset.idx))) + 1;
+      list.appendChild(createServerRow(nextIdx));
+      refreshRemoveButtons();
+    });
+  })();
 
   // ====== 탭 ======
   function showTab(name) {
@@ -250,101 +303,133 @@ const CODE_DESC = {
     p.set('rpsMax', $rpsMax?.value || '10');
     p.set('holdEnabled', $chkHold?.checked ? 'true' : 'false');
     p.set('holdSec', $holdSec?.value || '60');
+    p.set('timeoutSec', document.getElementById('timeoutSec')?.value || '20');
     return p;
   }
 
-  // ====== 서버 경로 분석 (동기 JSON) ======
-  async function analyzeByPath(filePath) {
+  // ====== 멀티서버 분석 ======
+  async function analyzeMulti() {
+    const servers = getServerInputs();
+    if (!servers.length) { alert('로그 파일을 선택하거나 서버 경로를 입력하세요.'); return; }
+
     const params = getQueryParams();
-    params.set('path', filePath);
+    const fd = new FormData();
+    fd.append('count', servers.length);
+    for (const [k, v] of params.entries()) fd.append(k, v);
+    servers.forEach((srv, i) => {
+      fd.append(`label_${i}`, srv.label);
+      if (srv.file)       fd.append(`file_${i}`, srv.file);
+      else if (srv.path)  fd.append(`path_${i}`, srv.path);
+    });
 
-    setProgress(50, '서버에서 분석 중... (대용량 파일은 30초 이상 걸릴 수 있습니다)');
+    const label = servers.length > 1
+      ? `서버 ${servers.length}대 분석 중...`
+      : '분석 중... (대용량 파일은 30초 이상 걸릴 수 있습니다)';
+    setProgress(50, label);
     $analyzeBtn.disabled = true;
-    $cancelBtn.disabled = false;
+    $cancelBtn.disabled  = false;
 
-    const url = `/api/analyze_path/?${params.toString()}`;
     const ctrl = new AbortController();
     currentSSE = ctrl;
 
     try {
-      const resp = await fetch(url, { signal: ctrl.signal });
+      const resp = await fetch('/api/analyze_multi/', { method: 'POST', body: fd, signal: ctrl.signal });
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.error || `HTTP ${resp.status}`);
       }
       const json = await resp.json();
       const data = json.data;
-      const extra = `${(data.lineCount||0).toLocaleString()} 줄 / ${data.elapsed||0}초 / ${data.fileSizeMB||0} MB`;
+      const extra = `${(data.lineCount || 0).toLocaleString()} 줄 / ${data.elapsed || 0}초 / ${data.fileSizeMB || 0} MB`;
       setProgress(100, `완료 — ${extra}`);
       handleResult(data);
     } catch (err) {
-      if (err.name === 'AbortError') {
-        setProgress(0, '취소됨');
-      } else {
-        alert('분석 오류: ' + err.message);
-        hideProgress();
-      }
+      if (err.name === 'AbortError') setProgress(0, '취소됨');
+      else { alert('분석 오류: ' + err.message); hideProgress(); }
     } finally {
       $analyzeBtn.disabled = false;
-      $cancelBtn.disabled = true;
+      $cancelBtn.disabled  = true;
       currentSSE = null;
     }
   }
 
-  // ====== 업로드 분석 (소용량) ======
-  async function analyzeByUpload(file) {
-    const params = getQueryParams();
-    const fd = new FormData();
-    fd.append('file', file);
-    for (const [k, v] of params.entries()) fd.append(k, v);
-
-    setProgress(10, '업로드 중...');
-    $analyzeBtn.disabled = true;
-
-    try {
-      const resp = await fetch('/api/analyze/', { method: 'POST', body: fd });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const json = await resp.json();
-      handleResult(json.data);
-    } catch (err) {
-      alert('분석 오류: ' + err.message);
-      hideProgress();
-    } finally {
-      $analyzeBtn.disabled = false;
-    }
-  }
-
-  // ====== 결과 처리 ======
-  function handleResult(data) {
-    lastResult = data;
-    setProgress(100, `완료 — ${(data.lineCount||0).toLocaleString()} 줄 처리됨`);
-    if (data.range) setDetectedRange(data.range);
-    renderKPIs(data.kpis);
-    renderCodes(data.codeDetails || [], Number(data.totalCodes || 0));
-    renderServers(data.serverRows || []);
-    renderDetailStats(data);
-    bindCSVButtons(data);
-    renderDashboard(data);
-    enableResultTabs();
-    bindTabsOnce();
-  }
-
   // ====== 분석 버튼 ======
-  $analyzeBtn?.addEventListener('click', () => {
-    const mode = getInputMode();
-    if (mode === 'path') {
-      analyzeByPath($filePath.value.trim());
-    } else if (mode === 'upload') {
-      analyzeByUpload($file.files[0]);
-    } else {
-      alert('로그 파일을 선택하거나 서버 경로를 입력하세요.');
-    }
-  });
-
+  $analyzeBtn?.addEventListener('click', analyzeMulti);
   $cancelBtn?.addEventListener('click', () => {
     if (currentSSE) { currentSSE.abort(); currentSSE = null; }
     hideProgress();
   });
+
+  // ====== 결과 처리 ======
+  function handleResult(data) {
+    lastResult  = data;
+    lastServers = data.servers || [];
+
+    if (data.range) setDetectedRange(data.range);
+
+    const isMulti = lastServers.length > 1;
+    renderResult(data, isMulti);
+    bindCSVButtons(data);
+    renderDashboard(data);
+
+    // 서버 서브탭
+    renderServerSubTabs(lastServers);
+
+    enableResultTabs();
+    bindTabsOnce();
+  }
+
+  function renderResult(data, isMulti) {
+    renderKPIs(data.kpis);
+    renderCodes(data.codeDetails || [], Number(data.totalCodes || 0));
+    renderTopWaitTids(data.topWaitTids || [], isMulti);
+    renderDetailStats(data);
+  }
+
+  // ====== 서버 서브탭 (공용) ======
+  function buildServerSubTabs(containerId, onSelectFn) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!lastServers || lastServers.length <= 1) {
+      container.classList.add('hidden');
+      return;
+    }
+    container.classList.remove('hidden');
+
+    const makeTab = (label, onClick) => {
+      const btn = document.createElement('button');
+      btn.textContent = label;
+      btn.className = 'servertab';
+      btn.addEventListener('click', () => {
+        container.querySelectorAll('.servertab').forEach(t => t.classList.remove('active'));
+        btn.classList.add('active');
+        onClick();
+      });
+      return btn;
+    };
+
+    const combinedTab = makeTab('통합', () => onSelectFn(lastResult, true));
+    combinedTab.classList.add('active');
+    container.appendChild(combinedTab);
+
+    lastServers.forEach(srv => {
+      container.appendChild(makeTab(srv.label, () => onSelectFn(srv.data, false)));
+    });
+  }
+
+  function renderServerSubTabs(serverResults) {
+    // 로그 분석 탭 서브탭
+    buildServerSubTabs('serverSubTabs', (data, isCombined) => {
+      renderResult(data, isCombined);
+      bindCSVButtons(data);
+    });
+    // 대시보드 탭 서브탭
+    buildServerSubTabs('dashServerSubTabs', (data) => {
+      renderDashboard(data);
+    });
+  }
 
   // ====== 렌더러 ======
   function renderKPIs(k) {
@@ -379,26 +464,43 @@ const CODE_DESC = {
     });
   }
 
-  function renderServers(rows) {
-    if (!$serverTable) return;
-    $serverTable.innerHTML = '';
+  function renderTopWaitTids(rows, showServer) {
+    const table = document.getElementById('topWaitTidTable');
+    const tbody = table?.querySelector('tbody');
+    if (!tbody) return;
+
+    // 서버 컬럼 헤더/셀 표시 전환
+    table?.querySelectorAll('.col-server').forEach(el => {
+      el.classList.toggle('hidden', !showServer);
+    });
+
+    tbody.innerHTML = '';
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="${showServer ? 6 : 5}" class="subtle">데이터 없음</td></tr>`;
+      return;
+    }
     rows.forEach(r => {
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${r.server || '-'}</td><td>${fmt(r.issue_200)}</td><td>${fmt(r.wait_201)}</td>`;
-      $serverTable.appendChild(tr);
+      const badge = showServer && r.server
+        ? `<span class="server-badge">${r.server}</span>` : '';
+      const serverCell = showServer
+        ? `<td class="col-server">${r.server ? `<span class="server-badge">${r.server}</span>` : '-'}</td>` : '';
+      tr.innerHTML = `<td style="font-family:monospace;font-size:13px">${badge}${r.tid}</td><td>${r.ip}</td><td>${r.wait_secs}</td><td>${r.start_time || '-'}</td><td>${r.timestamp}</td>${serverCell}`;
+      tbody.appendChild(tr);
     });
   }
 
   function renderDetailStats(data) {
     const rs = data.rpsStats || {}, wd = data.waitDurStats || {};
-    const all = rs.all || {}, overMax = rs.overMax || {}, holdAct = rs.holdAct || {}, holdOver = rs.holdOver || {};
+    const all = rs.all || {}, overMax = rs.overMax || {}, holdOver = rs.holdOver || {};
     const enter = wd.enter || {}, quit = wd.quit || {};
+    const dur = data.durationStats || {};
     const el = (id) => document.getElementById(id);
     const s = (o) => `최소=${fmt(o.min||0)} / 최대=${fmt(o.max||0)} / 평균=${fmt2(o.avg||0)}`;
     const sc = (o) => `${fmt(o.count||0)} 건 (${s(o)})`;
     if (el('stat-rps'))       el('stat-rps').textContent = s(all);
     if (el('stat-rps-over'))  el('stat-rps-over').textContent = sc(overMax);
-    if (el('stat-hold-act'))  el('stat-hold-act').textContent = sc(holdAct);
+    if (el('stat-hold-act'))  el('stat-hold-act').textContent = s(dur);
     if (el('stat-hold-over')) el('stat-hold-over').textContent = sc(holdOver);
     if (el('stat-wait-enter'))el('stat-wait-enter').textContent = s(enter);
     if (el('stat-wait-quit')) el('stat-wait-quit').textContent = s(quit);
@@ -412,33 +514,28 @@ const CODE_DESC = {
         downloadCSV(filename, rows, headers);
       };
     };
-    bind('btn-qw-csv', data.quitWaitRows, 'quit_wait_users.csv', ['timestamp','ip','tid','status']);
-    bind('btn-pe-csv', data.postEnterRows, 'enter_no_done_users.csv', ['timestamp','ip','tid','status']);
-    bind('btn-server-csv', data.serverRows, 'server_sticky_summary.csv', ['server','issue_200','wait_201','return_502']);
-    bind('btn-anom-csv', data.anomRows, 'server_mixed_users.csv', ['timestamp','ip','tid','flow','samples']);
-    const anomBadge = document.getElementById('anomCnt');
-    if (anomBadge) anomBadge.textContent = (data.anomRows?.length || 0).toLocaleString('ko-KR');
+    bind('btn-qw-csv', data.quitWaitRows, 'quit_wait_users.csv', ['timestamp','ip','tid','status','server']);
+    bind('btn-pe-csv', data.postEnterRows, 'enter_no_done_users.csv', ['timestamp','ip','tid','status','server']);
   }
 
   // ====== 대시보드: IP Top 테이블 ======
   function renderDashboard(data) {
-    function fillTable(tableId, rows, valLabel) {
+    function fillTable(tableId, rows) {
       const tbody = document.querySelector(`#${tableId} tbody`);
       if (!tbody) return;
       tbody.innerHTML = '';
-      (rows || []).forEach((r, i) => {
+      (rows || []).forEach((r) => {
         const tr = document.createElement('tr');
         const ipLink = `<a href="#" class="ip-link" data-ip="${r.ip}" style="color:#4f46e5;text-decoration:underline;cursor:pointer">${r.ip}</a>`;
         tr.innerHTML = `<td>${ipLink}</td><td>${typeof r.count === 'number' && r.count % 1 !== 0 ? r.count.toFixed(1) : fmt(r.count)}</td>`;
         tbody.appendChild(tr);
       });
     }
-    fillTable('top-issue', data.topIssueIP, '발급 tid 수');
-    fillTable('top-wait', data.topWaitIP, '총 대기시간(s)');
-    fillTable('top-qw', data.topQwIP, '이탈 tid 수');
-    fillTable('top-pe', data.topPeIP, '이탈 tid 수');
+    fillTable('top-issue', data.topIssueIP);
+    fillTable('top-wait', data.topWaitIP);
+    fillTable('top-qw', data.topQwIP);
+    fillTable('top-pe', data.topPeIP);
 
-    // CSV 버튼
     const csvBind = (id, rows) => {
       const btn = document.getElementById(id);
       if (btn) btn.onclick = () => {
@@ -451,7 +548,6 @@ const CODE_DESC = {
     csvBind('csv-qw', data.topQwIP);
     csvBind('csv-pe', data.topPeIP);
 
-    // IP 클릭 → 사용자 추적 탭으로 이동
     document.querySelectorAll('#panel-dash .ip-link').forEach(link => {
       link.addEventListener('click', (e) => {
         e.preventDefault();
@@ -464,13 +560,28 @@ const CODE_DESC = {
   }
 
   // ====== 사용자 추적 ======
-  const $traceIp = $('#trace-ip');
-  const $traceFrom = $('#trace-from');
-  const $traceTo = $('#trace-to');
-  const $traceBtn = $('#traceBtn');
+  const $traceIp     = $('#trace-ip');
+  const $traceFrom   = $('#trace-from');
+  const $traceTo     = $('#trace-to');
+  const $traceBtn    = $('#traceBtn');
   const $traceResult = $('#traceResult');
-  const $traceBox = $('#traceBox');
-  const $traceHint = $('#traceHint');
+  const $traceBox    = $('#traceBox');
+  const $traceHint   = $('#traceHint');
+
+  // 상태 → 뱃지 스타일
+  const STATUS_CFG = {
+    '완료(5004)':  { cls: 'status-done',      text: '완료' },
+    '대기중이탈':  { cls: 'status-wait-out',   text: '대기이탈' },
+    '진입후이탈':  { cls: 'status-enter-out',  text: '진입이탈' },
+    '진행중':      { cls: 'status-ongoing',    text: '진행중' },
+  };
+  // opcode → 진입 유형 설명
+  const OPCODE_CFG = {
+    '5101':      '즉시진입',
+    '5002':      '대기후진입',
+    '5101+5002': '즉시+대기',
+    '-':         '-',
+  };
 
   async function doTrace(ip) {
     if (!lastResult) {
@@ -483,36 +594,86 @@ const CODE_DESC = {
     try {
       let traceUrl = `/api/trace/?ip=${encodeURIComponent(ip)}`;
       const fromVal = $traceFrom?.value;
-      const toVal = $traceTo?.value;
+      const toVal   = $traceTo?.value;
       if (fromVal) traceUrl += `&from=${encodeURIComponent(fromVal.replace('T', ' '))}`;
-      if (toVal) traceUrl += `&to=${encodeURIComponent(toVal.replace('T', ' '))}`;
+      if (toVal)   traceUrl += `&to=${encodeURIComponent(toVal.replace('T', ' '))}`;
+
       const resp = await fetch(traceUrl);
       const json = await resp.json();
-      if (json.error) {
-        if ($traceHint) $traceHint.textContent = json.error;
-        return;
-      }
+      if (json.error) { if ($traceHint) $traceHint.textContent = json.error; return; }
+
       const sess = json.data;
       if (!sess) {
         if ($traceHint) $traceHint.textContent = `"${ip}"에 해당하는 세션이 없습니다.`;
         return;
       }
-      const filterInfo = sess.filteredCount !== undefined && sess.filteredCount !== sess.tidCount
-        ? ` (필터: ${sess.filteredCount}개)` : '';
-      if ($traceHint) $traceHint.textContent = `${sess.tidCount}개 세션${filterInfo} / 총 대기 ${sess.totalWaitSec}초 / ${sess.firstSeen} ~ ${sess.lastSeen}`;
+
+      // hint 텍스트
+      const filterNote = (sess.filteredCount != null && sess.filteredCount !== sess.tidCount)
+        ? ` (필터 적용: ${sess.filteredCount}개)` : '';
+      if ($traceHint) $traceHint.textContent = '';
+
+      // 요약 카드 업데이트
+      const el = (id) => document.getElementById(id);
+      if (el('ts-total'))    el('ts-total').textContent    = fmt(sess.tidCount);
+      if (el('ts-filtered')) el('ts-filtered').textContent = fmt(sess.filteredCount ?? sess.tidCount) + filterNote;
+      if (el('ts-wait'))     el('ts-wait').textContent     = `${sess.totalWaitSec}초`;
+      if (el('ts-first'))    el('ts-first').textContent    = sess.firstSeen || '-';
+      if (el('ts-last'))     el('ts-last').textContent     = sess.lastSeen  || '-';
       if ($traceResult) $traceResult.style.display = '';
+
       if (!$traceBox) return;
 
+      // 멀티서버 여부
+      const showServer = lastServers.length > 1;
       const tids = sess.tids || [];
+
+      const serverTh = showServer ? '<th>서버</th>' : '';
       let html = `<table class="trace-table">
-        <thead><tr><th>TID</th><th>상태</th><th>시작</th><th>종료</th><th>대기(초)</th><th>opcode</th></tr></thead><tbody>`;
+        <thead><tr>
+          <th>TID</th>
+          ${serverTh}
+          <th>진입 유형</th>
+          <th>상태</th>
+          <th>키 발급</th>
+          <th>대기 종료</th>
+          <th>키 반납</th>
+          <th>대기(초)</th>
+        </tr></thead><tbody>`;
+
       tids.forEach(t => {
-        const cls = t.status === '완료(5004)' ? '' : (t.status.includes('이탈') ? 'style="color:#b91c1c;font-weight:700"' : '');
-        html += `<tr ${cls}><td style="font-family:monospace;font-size:13px">${t.tid}</td><td>${t.status}</td><td>${t.start}</td><td>${t.end}</td><td>${t.waitSec}</td><td>${t.opcode}</td></tr>`;
+        const sc   = STATUS_CFG[t.status] || { cls: '', text: t.status };
+        const entry = OPCODE_CFG[t.opcode] || t.opcode;
+
+        // 대기 종료: 5002가 없으면(즉시진입) "즉시진입" 표시
+        const endCell  = t.end  ? t.end  : `<span class="muted">—</span>`;
+        // 키 반납: 5004가 없으면 "—" 표시
+        const doneCell = t.done ? t.done : `<span class="muted">—</span>`;
+        // 대기시간: 0이면 "—"
+        const waitCell = t.waitSec ? t.waitSec : `<span class="muted">—</span>`;
+
+        const serverCell = showServer
+          ? `<td>${t.server ? `<span class="server-badge">${t.server}</span>` : '<span class="muted">—</span>'}</td>`
+          : '';
+
+        html += `<tr>
+          <td style="font-family:monospace;font-size:13px">${t.tid}</td>
+          ${serverCell}
+          <td><span class="entry-type">${entry}</span></td>
+          <td><span class="status-badge ${sc.cls}">${sc.text}</span></td>
+          <td>${t.start || '<span class="muted">—</span>'}</td>
+          <td>${endCell}</td>
+          <td>${doneCell}</td>
+          <td>${waitCell}</td>
+        </tr>`;
       });
+
       html += '</tbody></table>';
-      if (sess.truncated) html += `<div class="subtle" style="margin-top:8px">결과가 많아 500개까지만 표시됩니다. 시간대 필터를 사용하세요.</div>`;
+      if (sess.truncated) {
+        html += `<div class="subtle" style="margin-top:8px">결과가 많아 500개까지만 표시됩니다. 시간대 필터를 사용하세요.</div>`;
+      }
       $traceBox.innerHTML = html;
+
     } catch (err) {
       if ($traceHint) $traceHint.textContent = '검색 오류: ' + err.message;
     }
@@ -523,10 +684,44 @@ const CODE_DESC = {
     if (!ip) { alert('IP를 입력하세요.'); return; }
     doTrace(ip);
   });
-
-  // Enter key로 검색
   $traceIp?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); $traceBtn?.click(); }
+  });
+
+  // ====== 대시보드 시간 필터 ======
+  async function doDashFilter() {
+    if (!lastResult) {
+      if ($dashFilterHint) $dashFilterHint.textContent = '먼저 로그 분석을 실행하세요.';
+      return;
+    }
+    const fromVal = $dashFrom?.value;
+    const toVal   = $dashTo?.value;
+    if (!fromVal && !toVal) {
+      renderDashboard(lastResult);
+      if ($dashFilterHint) $dashFilterHint.textContent = '';
+      return;
+    }
+    if ($dashFilterHint) $dashFilterHint.textContent = '조회 중...';
+    try {
+      const params = new URLSearchParams();
+      if (fromVal) params.set('from', fromVal.replace('T', ' '));
+      if (toVal)   params.set('to',   toVal.replace('T', ' '));
+      const resp = await fetch(`/api/dashboard_filter/?${params}`);
+      const json = await resp.json();
+      if (json.error) { if ($dashFilterHint) $dashFilterHint.textContent = json.error; return; }
+      renderDashboard(json.data);
+      if ($dashFilterHint) $dashFilterHint.textContent = '조회 완료';
+    } catch (err) {
+      if ($dashFilterHint) $dashFilterHint.textContent = '조회 오류: ' + err.message;
+    }
+  }
+
+  $dashFilterBtn?.addEventListener('click', doDashFilter);
+  $dashResetBtn?.addEventListener('click', () => {
+    if ($dashFrom) $dashFrom.value = '';
+    if ($dashTo)   $dashTo.value   = '';
+    if (lastResult) renderDashboard(lastResult);
+    if ($dashFilterHint) $dashFilterHint.textContent = '';
   });
 
   bindTabsOnce();

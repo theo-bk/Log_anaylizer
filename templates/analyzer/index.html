@@ -388,6 +388,127 @@
         .help .tip b {
             color: #a5b4fc
         }
+
+        /* 멀티서버 */
+        .server-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 12px;
+            background: #fafafa
+        }
+
+        .server-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px
+        }
+
+        .server-num {
+            font-size: 13px;
+            font-weight: 700;
+            color: #6b7280;
+            white-space: nowrap
+        }
+
+        .server-label-input {
+            font-size: 13px;
+            padding: 5px 8px !important;
+            width: 130px !important
+        }
+
+        .server-subtabs {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 12px;
+            flex-wrap: wrap
+        }
+
+        .servertab {
+            padding: 6px 14px;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            background: #f3f4f6;
+            color: #374151;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer
+        }
+
+        .servertab.active {
+            background: #4f46e5;
+            color: #fff;
+            border-color: #4f46e5
+        }
+
+        .server-badge {
+            display: inline-block;
+            padding: 1px 7px;
+            border-radius: 999px;
+            background: #eef2ff;
+            color: #4338ca;
+            font-size: 11px;
+            font-weight: 700;
+            margin-right: 4px;
+            vertical-align: middle
+        }
+
+        /* 사용자 추적 개선 */
+        .trace-summary-cards {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 16px
+        }
+
+        .trace-summary-card {
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 10px;
+            padding: 10px 16px;
+            min-width: 140px
+        }
+
+        .trace-summary-card .label {
+            font-size: 12px;
+            color: #6b7280;
+            margin-bottom: 2px
+        }
+
+        .trace-summary-card .value {
+            font-size: 16px;
+            font-weight: 700;
+            color: #111827
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 2px 9px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            white-space: nowrap
+        }
+
+        .status-done    { background: #dcfce7; color: #15803d }
+        .status-wait-out{ background: #fee2e2; color: #b91c1c }
+        .status-enter-out{background: #ffedd5; color: #c2410c }
+        .status-ongoing { background: #dbeafe; color: #1d4ed8 }
+
+        .entry-type {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            background: #f3f4f6;
+            color: #374151;
+            white-space: nowrap
+        }
+
+        .trace-table th { font-size: 13px; color: #6b7280; font-weight: 600 }
+        .trace-table td { font-size: 13px }
+        .trace-table .muted { color: #9ca3af }
     </style>
 </head>
 
@@ -405,15 +526,18 @@
             <div class="controls">
                 <div class="controls-grid">
                     <div class="left-col">
+                        <!-- 서버 목록 (JS로 동적 렌더링) -->
                         <div>
-                            <label for="filePath">서버 파일 경로 (대용량 추천)</label><br />
-                            <input id="filePath" type="text" placeholder="예: /var/log/access.log" style="width:100%" />
-                            <div class="subtle" id="fileInfo">경로 입력 시 자동으로 범위를 탐지합니다</div>
-                        </div>
-                        <div>
-                            <label for="fileInput">또는 파일 업로드 (소용량)</label><br />
-                            <input id="fileInput" type="file" accept=".txt,.log" />
-                            <div class="subtle" id="fileName">선택된 파일 없음</div>
+                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+                                <label style="font-size:14px;color:#374151;font-weight:700">서버 로그 파일</label>
+                                <button type="button" id="addServerBtn" class="ghost" style="font-size:12px;padding:4px 10px">+ 서버 추가</button>
+                            </div>
+                            <div id="serverList" style="display:flex;flex-direction:column;gap:8px"></div>
+                            <div class="filerange" style="margin-top:8px">
+                                <span class="label">파일 범위:</span>
+                                <span id="rangeStart">-</span><span style="padding:0 6px">~</span><span id="rangeEnd">-</span>
+                                <span class="subtle" id="fileInfo"></span>
+                            </div>
                         </div>
                         <div>
                             <label for="project">프로젝트 ID</label><br />
@@ -422,6 +546,11 @@
                         <div>
                             <label for="segment">세그먼트 ID (비우면 전체)</label><br />
                             <input id="segment" type="text" placeholder="예: test" />
+                        </div>
+                        <div>
+                            <label for="timeoutSec">처리시간 최대 타임아웃(초)</label><br />
+                            <input id="timeoutSec" type="number" min="1" value="20" style="width:180px" />
+                            <div class="subtle">이 값을 초과하는 처리시간은 통계에서 제외됩니다</div>
                         </div>
 
                         <div>
@@ -483,6 +612,9 @@
                 </div>
                 <progress id="progressBar" value="0" max="100"></progress>
             </div>
+
+            <!-- 서버 서브탭 (멀티서버 분석 시 표시) -->
+            <div id="serverSubTabs" class="server-subtabs hidden"></div>
 
             <!-- KPI 6개 -->
             <div class="kpis">
@@ -570,8 +702,8 @@
                         <div class="mono" id="stat-rps-over">0 건 (최소=0 / 최대=0 / 평균=0.00)</div>
                     </div>
                     <div class="statcard">
-                        <h4>대기 순번 유지 동작</h4>
-                        <div class="mono" id="stat-hold-act">0 건 (최소=0 / 최대=0 / 평균=0.00)</div>
+                        <h4>처리시간 평균(초)</h4>
+                        <div class="mono" id="stat-hold-act">최소=0 / 최대=0 / 평균=0.00</div>
                     </div>
                     <div class="statcard">
                         <h4>대기 순번 유지 시간 초과</h4>
@@ -589,52 +721,72 @@
             </div>
 
             <div class="section">
-                <details id="serverDetails">
-                    <summary style="display:flex;align-items:center;gap:8px;cursor:pointer">
-                        <h3 style="margin:0">서버별 통계</h3>
-                        <button id="btn-server-csv" class="ghost" style="margin-left:auto">CSV</button>
-                    </summary>
-                    <table class="table" id="serverTable">
-                        <thead>
-                            <tr>
-                                <th>서버</th>
-                                <th>발급(NF200)</th>
-                                <th>대기(NF201)</th>
-                            </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                    <div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-                        <div><b>서버 혼합 사용자(이상)</b> <span id="anomCnt" class="badge">0</span></div>
-                        <button id="btn-anom-csv">CSV</button>
-                    </div>
-                </details>
+                <h3 style="margin:0 0 8px">처리시간 TOP 5 (TID 기준)</h3>
+                <table class="table" id="topWaitTidTable">
+                    <thead>
+                        <tr>
+                            <th>TID</th>
+                            <th>IP</th>
+                            <th>처리시간(초)</th>
+                            <th>키 발급시간</th>
+                            <th>키 반납 시간</th>
+                            <th class="col-server hidden">서버</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
             </div>
         </div><!-- /panel-analyze -->
 
         <div class="section hidden" id="panel-trace">
             <h2>사용자 추적</h2>
-            <div class="trace-grid">
-                <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:end">
-                    <div><label>IP (필수)</label><br /><input id="trace-ip" type="text" placeholder="예: 123.123.123.123"
-                            style="width:220px" /></div>
-                    <div><label>시작 시간</label><br /><input id="trace-from" type="datetime-local" step="1"
-                            style="width:200px" /></div>
-                    <div><label>종료 시간</label><br /><input id="trace-to" type="datetime-local" step="1"
-                            style="width:200px" /></div>
-                </div>
-                <div class="actions" style="margin-top:8px"><button id="traceBtn" class="ghost">검색</button>
-                    <div class="subtle" id="traceHint"></div>
-                </div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+                <div><label>IP (필수)</label><br /><input id="trace-ip" type="text" placeholder="예: 123.123.123.123" style="width:220px" /></div>
+                <div><label>시작 시간</label><br /><input id="trace-from" type="datetime-local" step="1" style="width:200px" /></div>
+                <div><label>종료 시간</label><br /><input id="trace-to" type="datetime-local" step="1" style="width:200px" /></div>
+                <button id="traceBtn" class="ghost">검색</button>
             </div>
-            <div class="section" id="traceResult" style="display:none">
-                <h2>검색 결과</h2>
+            <div class="subtle" id="traceHint" style="margin-top:8px"></div>
+
+            <div id="traceResult" style="display:none;margin-top:16px">
+                <!-- 요약 카드 -->
+                <div class="trace-summary-cards" id="traceSummaryCards">
+                    <div class="trace-summary-card">
+                        <div class="label">전체 세션</div>
+                        <div class="value" id="ts-total">0</div>
+                    </div>
+                    <div class="trace-summary-card">
+                        <div class="label">조회된 세션</div>
+                        <div class="value" id="ts-filtered">0</div>
+                    </div>
+                    <div class="trace-summary-card">
+                        <div class="label">총 대기시간</div>
+                        <div class="value" id="ts-wait">0초</div>
+                    </div>
+                    <div class="trace-summary-card">
+                        <div class="label">최초 접속</div>
+                        <div class="value" id="ts-first" style="font-size:13px">-</div>
+                    </div>
+                    <div class="trace-summary-card">
+                        <div class="label">마지막 접속</div>
+                        <div class="value" id="ts-last" style="font-size:13px">-</div>
+                    </div>
+                </div>
                 <div id="traceBox"></div>
             </div>
         </div>
 
         <div class="section hidden" id="panel-dash">
             <h2>대시보드 (IP Top)</h2>
+            <!-- 서버 서브탭 (멀티서버 시 표시) -->
+            <div id="dashServerSubTabs" class="server-subtabs hidden" style="margin-bottom:12px"></div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px">
+                <div><label>시작 시간</label><br /><input id="dash-from" type="datetime-local" step="1" style="width:200px" /></div>
+                <div><label>종료 시간</label><br /><input id="dash-to" type="datetime-local" step="1" style="width:200px" /></div>
+                <button id="dashFilterBtn" class="ghost">조회</button>
+                <button id="dashResetBtn" class="ghost">전체</button>
+                <span class="subtle" id="dashFilterHint"></span>
+            </div>
             <div class="grid2">
                 <div class="statcard">
                     <h4>요청(발급 tid) 최다 IP</h4>
@@ -688,7 +840,7 @@
         </div>
     </div>
 
-    <script src="{% static 'analyzer/app.js' %}"></script>
+    <script src="{% static 'analyzer/app.js' %}?v=5"></script>
 </body>
 
 </html>

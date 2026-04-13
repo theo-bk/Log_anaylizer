@@ -2,13 +2,14 @@ import csv
 import json
 import os
 import time
+from collections import defaultdict
 
 from django.http import JsonResponse, HttpResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from .parser import analyze_file, compute_range
+from .parser import analyze_file, compute_range, stat, percent, to_iso
 
 
 # ===== 분석 결과 캐시 (사용자추적 on-demand 조회용) =====
@@ -70,13 +71,202 @@ def _strip_internal(result):
 
 
 def _cache_internal(result):
-    """분석 결과의 내부 데이터를 캐시에 저장."""
+    """단일 서버 분석 결과의 내부 데이터를 캐시에 저장."""
     _last_result_cache['sessions'] = result.get('_sessions')
     _last_result_cache['dropout_201'] = result.get('_dropout_201')
     _last_result_cache['dropout_200'] = result.get('_dropout_200')
     _last_result_cache['ip_counts'] = result.get('_ip_counts')
     _last_result_cache['ip_times'] = result.get('_ip_times')
     _last_result_cache['ip_to_tids'] = result.get('_ip_to_tids')
+
+
+def _cache_multi_internal(labeled_results):
+    """멀티서버 분석 결과를 서버 인덱스 prefix로 구분하여 캐시에 저장.
+    session key: (sid, aid, tid) → ('N:sid', aid, tid) 형태로 prefix.
+    trace_ip에서 tid_k(=key[2])만 표시에 사용하므로 sid prefix는 투명함.
+    """
+    merged_sessions = {}
+    merged_dropout_201 = set()
+    merged_dropout_200 = set()
+    merged_ip_counts = defaultdict(lambda: [0, 0, 0, 0, 0, 0.0])
+    merged_ip_times = {}
+    merged_ip_to_tids = defaultdict(list)
+
+    for idx, (label, result) in enumerate(labeled_results):
+        prefix = f'{idx}:'
+        for key, sess in (result.get('_sessions') or {}).items():
+            new_key = (prefix + key[0], key[1], key[2])
+            merged_sessions[new_key] = sess
+        for key in (result.get('_dropout_201') or set()):
+            merged_dropout_201.add((prefix + key[0], key[1], key[2]))
+        for key in (result.get('_dropout_200') or set()):
+            merged_dropout_200.add((prefix + key[0], key[1], key[2]))
+        for ip, counts in (result.get('_ip_counts') or {}).items():
+            m = merged_ip_counts[ip]
+            for j in range(5):
+                m[j] += counts[j]
+            m[5] += counts[5]
+        for ip, times in (result.get('_ip_times') or {}).items():
+            if isinstance(times, tuple) and len(times) == 2:
+                mn, mx = times
+                if ip not in merged_ip_times:
+                    merged_ip_times[ip] = (mn, mx)
+                else:
+                    prev_mn, prev_mx = merged_ip_times[ip]
+                    merged_ip_times[ip] = (
+                        min(prev_mn, mn) if (mn and prev_mn) else (mn or prev_mn),
+                        max(prev_mx, mx) if (mx and prev_mx) else (mx or prev_mx),
+                    )
+        for ip, tid_list in (result.get('_ip_to_tids') or {}).items():
+            for key in tid_list:
+                merged_ip_to_tids[ip].append((prefix + key[0], key[1], key[2]))
+
+    _last_result_cache['sessions'] = merged_sessions
+    _last_result_cache['dropout_201'] = merged_dropout_201
+    _last_result_cache['dropout_200'] = merged_dropout_200
+    _last_result_cache['ip_counts'] = dict(merged_ip_counts)
+    _last_result_cache['ip_times'] = merged_ip_times
+    _last_result_cache['ip_to_tids'] = dict(merged_ip_to_tids)
+    # trace_ip에서 session key prefix → 서버 라벨 변환용
+    _last_result_cache['server_prefix_map'] = {
+        f'{idx}:': label for idx, (label, _) in enumerate(labeled_results)
+    }
+
+
+def merge_results(labeled_results):
+    """labeled_results: list of (label: str, result: dict) — 멀티서버 결과를 통합."""
+    # 시간 범위
+    starts = [r['range']['startSec'] for _, r in labeled_results if r['range'].get('startSec')]
+    ends = [r['range']['endSec'] for _, r in labeled_results if r['range'].get('endSec')]
+
+    # 진입 IP: 서버 간 union
+    all_entry_ips = set()
+    for _, r in labeled_results:
+        all_entry_ips.update(r.get('_raw', {}).get('entry_ips', []))
+
+    # KPI 합산
+    kpis_list = [r['kpis'] for _, r in labeled_results]
+    req_user      = sum(k['reqUserCnt'] for k in kpis_list)
+    wait_user     = sum(k['waitUserCnt'] for k in kpis_list)
+    done_user     = sum(k['doneUserCnt'] for k in kpis_list)
+    quit_wait     = sum(k['quitWaitCnt'] for k in kpis_list)
+    post_enter    = sum(k['postEnterLeaveCnt'] for k in kpis_list)
+    entry_success = sum(k.get('entrySuccessCount', 0) for k in kpis_list)
+
+    qw_rate = percent(quit_wait, wait_user)
+    pe_rate = percent(post_enter, entry_success)
+
+    # raw 배열 연결
+    def concat(field):
+        out = []
+        for _, r in labeled_results:
+            out.extend(r.get('_raw', {}).get(field, []))
+        return out
+
+    all_gaps        = concat('gaps')
+    all_over_ttlmax = concat('over_ttlmax')
+    all_between     = concat('between')
+    all_over_keep   = concat('over_keep')
+    all_returned    = concat('returned_wait')
+    all_dropped     = concat('dropped_wait')
+    all_durations   = concat('durations')
+
+    # topWaitTids: 서버별 pool 병합 후 상위 5개
+    all_top_pool = []
+    for label, r in labeled_results:
+        pool = r.get('_raw', {}).get('top_wait_pool', r.get('topWaitTids', []))
+        for item in pool:
+            item_copy = dict(item)
+            item_copy['server'] = label
+            all_top_pool.append(item_copy)
+    all_top_pool.sort(key=lambda x: x['wait_secs'], reverse=True)
+
+    # codeDetails: 코드별 병합 (실제 건수 = code_cnt, rows는 최대 500)
+    code_cnt_merged = defaultdict(int)
+    code_rows_merged = defaultdict(list)
+    for _, r in labeled_results:
+        raw_code_cnt = r.get('_raw', {}).get('code_cnt', {})
+        for cd in r.get('codeDetails', []):
+            code = str(cd['code'])
+            true_cnt = raw_code_cnt.get(code, cd['cnt'])
+            code_cnt_merged[code] += true_cnt
+            existing = code_rows_merged[code]
+            if len(existing) < 500:
+                existing.extend(cd.get('rows', [])[:500 - len(existing)])
+    code_details = sorted(
+        [{'code': c, 'cnt': cnt, 'rows': code_rows_merged[c]} for c, cnt in code_cnt_merged.items()],
+        key=lambda x: x['cnt'], reverse=True,
+    )
+
+    # 이탈 row 병합 (server 라벨은 views.py에서 미리 스탬프됨)
+    quit_rows, post_rows = [], []
+    for _, r in labeled_results:
+        quit_rows.extend(r.get('quitWaitRows', []))
+        post_rows.extend(r.get('postEnterRows', []))
+
+    # IP 통계 병합
+    merged_ip_counts = defaultdict(lambda: [0, 0, 0, 0, 0, 0.0])
+    for _, r in labeled_results:
+        for ip, c in (r.get('_ip_counts') or {}).items():
+            m = merged_ip_counts[ip]
+            for j in range(5):
+                m[j] += c[j]
+            m[5] += c[5]
+
+    def top_ip(idx, limit=50):
+        items = [(ip, c[idx]) for ip, c in merged_ip_counts.items() if c[idx] > 0]
+        items.sort(key=lambda x: x[1], reverse=True)
+        return [{'ip': ip, 'count': v} for ip, v in items[:limit]]
+
+    top_issue_ip = top_ip(0)
+    top_wait_ip = [{'ip': ip, 'count': round(c[5], 1)}
+                   for ip, c in merged_ip_counts.items() if c[5] > 0]
+    top_wait_ip.sort(key=lambda x: x['count'], reverse=True)
+    top_wait_ip = top_wait_ip[:50]
+    top_qw_ip = top_ip(3)
+    top_pe_ip = top_ip(4)
+
+    return {
+        'range': {
+            'startSec': min(starts) if starts else None,
+            'endSec':   max(ends)   if ends   else None,
+            'startISO': to_iso(min(starts)) if starts else '',
+            'endISO':   to_iso(max(ends))   if ends   else '',
+        },
+        'kpis': {
+            'enterIPCnt':        len(all_entry_ips),
+            'reqUserCnt':        req_user,
+            'waitUserCnt':       wait_user,
+            'doneUserCnt':       done_user,
+            'quitWaitCnt':       quit_wait,
+            'postEnterLeaveCnt': post_enter,
+            'qwRate':            qw_rate,
+            'peRate':            pe_rate,
+            'entrySuccessCount': entry_success,
+        },
+        'rpsStats': {
+            'all':     stat(all_gaps),
+            'overMax': stat(all_over_ttlmax),
+            'holdAct': stat(all_between),
+            'holdOver': stat(all_over_keep),
+        },
+        'waitDurStats': {
+            'enter': stat(all_returned),
+            'quit':  stat(all_dropped),
+        },
+        'durationStats': stat(all_durations),
+        'topWaitTids':   all_top_pool[:5],
+        'codeDetails':   code_details,
+        'quitWaitRows':  quit_rows,
+        'postEnterRows': post_rows,
+        'anomRows':      [],
+        'totalCodes':    sum(code_cnt_merged.values()),
+        'lineCount':     sum(r.get('lineCount', 0) for _, r in labeled_results),
+        'topIssueIP':    top_issue_ip,
+        'topWaitIP':     top_wait_ip,
+        'topQwIP':       top_qw_ip,
+        'topPeIP':       top_pe_ip,
+    }
 
 
 def index(request):
@@ -98,11 +288,13 @@ def _get_params(request):
     rps_max = float(g('rpsMax') or 10)
     hold_enabled = g('holdEnabled') == 'true'
     hold_sec_val = float(g('holdSec') or 60)
+    timeout_sec = float(g('timeoutSec') or 20)
     return dict(
         pj=pj, seg=seg, seg_all=seg_all,
         start_sec=start_sec, end_sec=end_sec,
         rps_enabled=rps_enabled, rps_min=rps_min, rps_max=rps_max,
         hold_enabled=hold_enabled, hold_sec=hold_sec_val,
+        timeout_sec=timeout_sec,
     )
 
 
@@ -131,6 +323,7 @@ def analyze_by_path(request):
         rps_enabled=params['rps_enabled'], rps_min=params['rps_min'],
         rps_max=params['rps_max'],
         hold_enabled=params['hold_enabled'], hold_sec=params['hold_sec'],
+        timeout_sec=params['timeout_sec'],
     )
 
     elapsed = round(time.time() - start_time, 1)
@@ -220,6 +413,7 @@ def trace_ip(request):
     dropout_200 = _last_result_cache.get('dropout_200', set())
     ip_counts = _last_result_cache.get('ip_counts', {})
     ip_times = _last_result_cache.get('ip_times', {})
+    server_prefix_map = _last_result_cache.get('server_prefix_map') or {}  # {prefix: label}
 
     # 역인덱스로 O(1) 조회
     tid_list = ip_to_tids.get(ip)
@@ -233,11 +427,13 @@ def trace_ip(request):
     from .parser import epoch_to_str
 
     # 상세 생성 (시간대 필터 적용, 전체 반환)
+    # session key: (sid, aid, tid) 복합키
     # session format: [ip, flags, start_sec, wait_end_sec, last_req_sec]
     # flags: bit 0=has_5101, bit 1=has_5002, bit 2=has_5004
     tid_details = []
     for t in tid_list:
         s = sessions[t]
+        _sid, _aid, tid_k = t   # 복합키 언패킹
         flags = s[1]
         st = s[2]
         we = s[3]
@@ -258,13 +454,23 @@ def trace_ip(request):
         wait_sec = round(we - st, 1) if (has_5002 and st and we) else 0
         opcode = '5101+5002' if (has_5101 and has_5002) else (
             '5101' if has_5101 else ('5002' if has_5002 else '-'))
+
+        # 서버 라벨: _sid prefix로 역조회 (멀티서버 시 '0:', '1:' 등으로 시작)
+        server = ''
+        for prefix, srv_label in server_prefix_map.items():
+            if _sid.startswith(prefix):
+                server = srv_label
+                break
+
         tid_details.append({
-            'tid': t,
+            'tid': tid_k,
             'status': status,
-            'start': start_str,
-            'end': epoch_to_str(we) if we else '',
+            'start': start_str,                          # 키 발급 시각
+            'end': epoch_to_str(we) if we else '',       # 대기 종료(진입) 시각
+            'done': epoch_to_str(s[4]) if (has_5004 and s[4]) else '',  # 키 반납(5004) 시각
             'waitSec': wait_sec,
             'opcode': opcode,
+            'server': server,
         })
     tid_details.sort(key=lambda x: x['start'])
 
@@ -306,6 +512,7 @@ def analyze(request):
         rps_enabled=params['rps_enabled'], rps_min=params['rps_min'],
         rps_max=params['rps_max'],
         hold_enabled=params['hold_enabled'], hold_sec=params['hold_sec'],
+        timeout_sec=params['timeout_sec'],
     )
 
     _cache_internal(result)
@@ -323,6 +530,158 @@ def get_range(request):
     lines = _stream_lines_from_upload(f)
     result = compute_range(lines)
     return JsonResponse(result)
+
+
+@csrf_exempt
+def dashboard_filter(request):
+    """
+    GET /api/dashboard_filter/?from=YYYY-MM-DD HH:MM:SS&to=YYYY-MM-DD HH:MM:SS
+    캐시된 세션 데이터를 시간 범위로 필터링해 IP Top 통계 반환.
+    """
+    sessions = _last_result_cache.get('sessions')
+    ip_to_tids = _last_result_cache.get('ip_to_tids')
+    if not sessions or not ip_to_tids:
+        return JsonResponse({'error': '먼저 로그 분석을 실행하세요.'}, status=400)
+
+    dropout_201 = _last_result_cache.get('dropout_201') or set()
+    dropout_200 = _last_result_cache.get('dropout_200') or set()
+
+    time_from = request.GET.get('from', '').strip()
+    time_to = request.GET.get('to', '').strip()
+
+    from .parser import epoch_to_str
+
+    # ip -> [tid수, 대기시간합계, 대기이탈수, 진입이탈수]
+    ip_stats = defaultdict(lambda: [0, 0.0, 0, 0])
+
+    for ip, tid_list in ip_to_tids.items():
+        for t in tid_list:
+            s = sessions.get(t)
+            if not s:
+                continue
+            st = s[2]
+            start_str = epoch_to_str(st) if st else ''
+            if time_from and start_str and start_str < time_from:
+                continue
+            if time_to and start_str and start_str > time_to:
+                continue
+
+            flags = s[1]
+            we = s[3]
+            has_5002 = flags & 2
+
+            c = ip_stats[ip]
+            c[0] += 1
+            if has_5002 and st and we:
+                c[1] += we - st
+            if t in dropout_201:
+                c[2] += 1
+            if t in dropout_200:
+                c[3] += 1
+
+    def sort_top(idx, limit=50):
+        items = [(ip, c[idx]) for ip, c in ip_stats.items() if c[idx] > 0]
+        items.sort(key=lambda x: x[1], reverse=True)
+        return [{'ip': ip, 'count': round(v, 1) if isinstance(v, float) else v}
+                for ip, v in items[:limit]]
+
+    return JsonResponse({'data': {
+        'topIssueIP': sort_top(0),
+        'topWaitIP': sort_top(1),
+        'topQwIP': sort_top(2),
+        'topPeIP': sort_top(3),
+    }})
+
+
+# ===== 멀티서버 통합 분석 (파일업로드 + 서버경로 혼합 지원) =====
+
+@csrf_exempt
+@require_POST
+def analyze_multi(request):
+    """
+    POST /api/analyze_multi/
+    FormData:
+      count=N
+      label_0=서버1  (file_0=FILE | path_0=/path/to/log)
+      label_1=서버2  (file_1=FILE | path_1=/path/to/log)
+      ...공통 분석 파라미터(pj, seg, timeoutSec 등)...
+    Response: {data: {combined result + servers: [{label, data}, ...]}}
+    """
+    params = _get_params(request)
+    count = int(request.POST.get('count', 0))
+    if count < 1:
+        return JsonResponse({'error': '서버를 1개 이상 입력하세요.'}, status=400)
+
+    start_time = time.time()
+    total_size = 0
+    labeled_results = []
+
+    for i in range(count):
+        label = (request.POST.get(f'label_{i}') or f'서버 {i + 1}').strip()
+        path = request.POST.get(f'path_{i}', '').strip()
+        f = request.FILES.get(f'file_{i}')
+
+        if path:
+            if not os.path.isfile(path):
+                return JsonResponse({'error': f'[{label}] 파일을 찾을 수 없습니다: {path}'}, status=400)
+            total_size += os.path.getsize(path)
+            lines = _stream_lines_from_file(path)
+        elif f:
+            total_size += f.size
+            lines = _stream_lines_from_upload(f)
+        else:
+            return JsonResponse({'error': f'[{label}] 파일 또는 경로가 필요합니다.'}, status=400)
+
+        result = analyze_file(
+            lines,
+            pj=params['pj'], seg=params['seg'], seg_all=params['seg_all'],
+            start_sec=params['start_sec'], end_sec=params['end_sec'],
+            rps_enabled=params['rps_enabled'], rps_min=params['rps_min'],
+            rps_max=params['rps_max'],
+            hold_enabled=params['hold_enabled'], hold_sec=params['hold_sec'],
+            timeout_sec=params['timeout_sec'],
+        )
+        labeled_results.append((label, result))
+
+    elapsed = round(time.time() - start_time, 1)
+
+    # view 레이어에서 서버 라벨 스탬프 (parser는 라벨 불필요)
+    for label, result in labeled_results:
+        for item in result.get('topWaitTids', []):
+            item['server'] = label
+        for item in result.get('_raw', {}).get('top_wait_pool', []):
+            item['server'] = label
+        for row in result.get('quitWaitRows', []):
+            row['server'] = label
+        for row in result.get('postEnterRows', []):
+            row['server'] = label
+
+    # 통합 결과 생성
+    if len(labeled_results) > 1:
+        combined = merge_results(labeled_results)
+    else:
+        combined = labeled_results[0][1]
+
+    # trace_ip용 캐시 저장 (멀티서버 prefix 적용)
+    _cache_multi_internal(labeled_results)
+
+    def prepare(result, label=None):
+        rd = _strip_internal(result)
+        _limit_result(rd)
+        if label:
+            rd['serverLabel'] = label
+        return rd
+
+    combined_data = prepare(combined)
+    combined_data['elapsed'] = elapsed
+    combined_data['fileSize'] = total_size
+    combined_data['fileSizeMB'] = round(total_size / 1024 / 1024, 1)
+    combined_data['servers'] = [
+        {'label': label, 'data': prepare(result, label)}
+        for label, result in labeled_results
+    ]
+
+    return JsonResponse({'data': combined_data})
 
 
 @csrf_exempt

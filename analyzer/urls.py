@@ -10,4 +10,7 @@ urlpatterns = [
     path('api/range_path/', views.range_by_path, name='range_by_path'),
     path('api/analyze_path/', views.analyze_by_path, name='analyze_by_path'),
     path('api/trace/', views.trace_ip, name='trace_ip'),
+    path('api/dashboard_filter/', views.dashboard_filter, name='dashboard_filter'),
+    # 멀티서버 통합 분석
+    path('api/analyze_multi/', views.analyze_multi, name='analyze_multi'),
 ]
