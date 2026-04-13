@@ -634,7 +634,7 @@
           },
           y: {
             ticks: { font: { size: 13 }, color: '#1e293b' },
-            afterFit: (scale) => { scale.width = Math.max(scale.width, 130); }
+            afterFit: (scale) => { scale.width = Math.max(scale.width, Math.min(130, scale.chart.width * 0.28)); }
           }
         },
         onClick: (evt, elements) => {
@@ -782,7 +782,7 @@
           x: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 13 }, color: '#6b7280' } },
           y: {
             ticks: { font: { size: 13 }, color: '#1e293b' },
-            afterFit: (scale) => { scale.width = Math.max(scale.width, 130); }
+            afterFit: (scale) => { scale.width = Math.max(scale.width, Math.min(130, scale.chart.width * 0.28)); }
           }
         },
         onClick: (evt, elements) => {

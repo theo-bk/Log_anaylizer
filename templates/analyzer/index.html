@@ -24,7 +24,8 @@
             margin: 0;
             background: var(--bg);
             color: var(--fg);
-            font-family: system-ui, -apple-system, Segoe UI, Roboto, Apple SD Gothic Neo, Noto Sans KR, sans-serif
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Apple SD Gothic Neo, Noto Sans KR, sans-serif;
+            overflow-x: hidden
         }
 
         .wrap {
@@ -44,7 +45,7 @@
         }
 
         label {
-            font-size: 14px;
+            font-size: 16px;
             color: var(--muted)
         }
 
@@ -88,7 +89,7 @@
         }
 
         .subtle {
-            font-size: 13px;
+            font-size: 14px;
             color: var(--muted)
         }
 
@@ -110,7 +111,7 @@
             align-items: center
         }
         .header-brand {
-            font-size: 18px;
+            font-size: 21px;
             font-weight: 800;
             color: #f1f5f9;
             letter-spacing: -.02em;
@@ -127,7 +128,7 @@
             border: none;
             background: transparent;
             color: #94a3b8;
-            font-size: 15px;
+            font-size: 17px;
             font-weight: 600;
             cursor: pointer;
             transition: background .15s, color .15s;
@@ -147,12 +148,19 @@
             gap: 16px;
             margin-top: 16px
         }
-        @media (max-width:900px) { .dash-charts-grid { grid-template-columns: 1fr } }
+        .dash-charts-grid > * { min-width: 0; }
+        .dash-grid-unequal { grid-template-columns: 1fr 1.4fr; }
+        @media (max-width:900px) {
+            .dash-charts-grid { grid-template-columns: 1fr }
+            .dash-grid-unequal { grid-template-columns: 1fr }
+        }
         .chart-card {
             background: #fff;
             border-radius: 16px;
             padding: 16px;
-            box-shadow: 0 1px 0 var(--ring), 0 12px 28px -14px var(--ring)
+            box-shadow: 0 1px 0 var(--ring), 0 12px 28px -14px var(--ring);
+            min-width: 0;
+            overflow: hidden
         }
         .chart-card-header {
             display: flex;
@@ -247,6 +255,7 @@
             gap: 16px;
             margin-top: 16px
         }
+        .kpis > * { min-width: 0; }
 
         @media (max-width:1100px) {
             .kpis {
@@ -590,7 +599,7 @@
                         <!-- 서버 목록 (JS로 동적 렌더링) -->
                         <div>
                             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-                                <label style="font-size:14px;color:#374151;font-weight:700">서버 로그 파일</label>
+                                <label style="font-size:16px;color:#374151;font-weight:700">서버 로그 파일</label>
                                 <button type="button" id="addServerBtn" class="ghost" style="font-size:12px;padding:4px 10px">+ 서버 추가</button>
                             </div>
                             <div id="serverList" style="display:flex;flex-direction:column;gap:8px"></div>
@@ -817,7 +826,7 @@
             </div>
 
             <!-- ① 세션 상태 도넛 + ② 진입 깔때기 -->
-            <div class="dash-charts-grid" style="grid-template-columns:1fr 1.4fr;margin-top:16px">
+            <div class="dash-charts-grid dash-grid-unequal">
                 <div class="chart-card">
                     <div class="chart-card-header"><h4>① 세션 상태 분포</h4></div>
                     <div class="chart-canvas-wrap"><canvas id="chart-session-status"></canvas></div>
@@ -829,7 +838,7 @@
             </div>
 
             <!-- ③ IP Top 4 차트 -->
-            <div class="dash-charts-grid" style="margin-top:16px">
+            <div class="dash-charts-grid">
                 <div class="chart-card">
                     <div class="chart-card-header">
                         <h4>③ 요청(tid) 최다 IP <span class="click-badge">↗ 클릭하면 사용자 추적</span></h4>
@@ -861,7 +870,7 @@
             </div>
 
             <!-- ③-b IP별 요청·이탈 비교 + ⑤ 시간대별 트래픽 추이 (2-col) -->
-            <div class="dash-charts-grid" style="margin-top:16px">
+            <div class="dash-charts-grid">
                 <div class="chart-card">
                     <div class="chart-card-header">
                         <h4>③ IP별 요청·이탈 비교 (Top 10) <span class="chart-hint">— 요청 대비 이탈 비율이 높은 IP 식별</span> <span class="click-badge">↗ 클릭하면 사용자 추적</span></h4>
@@ -881,7 +890,7 @@
             </div>
 
             <!-- ⑥ 처리시간 분포 + 상태코드 도넛 -->
-            <div class="dash-charts-grid" style="margin-top:16px">
+            <div class="dash-charts-grid">
                 <div class="chart-card">
                     <div class="chart-card-header"><h4>⑥ 처리시간 분포 (히스토그램)</h4></div>
                     <div class="chart-canvas-wrap"><canvas id="chart-dur-hist"></canvas></div>
@@ -935,7 +944,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-    <script src="{% static 'analyzer/app.js' %}?v=11"></script>
+    <script src="{% static 'analyzer/app.js' %}?v=12"></script>
 </body>
 
 </html>
