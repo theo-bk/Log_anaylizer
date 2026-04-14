@@ -586,6 +586,7 @@
             <nav class="header-nav">
                 <button class="nav-tab active" data-tab="analyze">로그 분석</button>
                 <button class="nav-tab disabled" data-tab="dash" title="먼저 로그 분석을 완료하세요">대시보드</button>
+                <button class="nav-tab disabled" data-tab="timeline" title="먼저 로그 분석을 완료하세요">세션 타임라인</button>
                 <button class="nav-tab disabled" data-tab="trace" title="먼저 로그 분석을 완료하세요">사용자 추적</button>
             </nav>
         </div>
@@ -904,6 +905,40 @@
             </div>
         </div>
 
+        <!-- 세션 타임라인 패널 -->
+        <div class="section hidden" id="panel-timeline">
+            <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:4px">
+                <div><label>시작 시간</label><br /><input id="tl-from" type="datetime-local" step="1" style="width:200px" /></div>
+                <div><label>종료 시간</label><br /><input id="tl-to" type="datetime-local" step="1" style="width:200px" /></div>
+                <button id="tlFilterBtn" class="ghost">조회</button>
+                <button id="tlResetBtn" class="ghost">전체</button>
+                <button id="tlCsvBtn" class="ghost">CSV 다운로드</button>
+                <span class="subtle" id="tlHint"></span>
+            </div>
+            <div style="overflow-x:auto;margin-top:16px">
+                <table class="table" id="tlTable">
+                    <thead>
+                        <tr>
+                            <th style="white-space:nowrap">키발급 시각</th>
+                            <th>TID</th>
+                            <th>IP</th>
+                            <th>진입유형</th>
+                            <th>상태</th>
+                            <th style="white-space:nowrap">대기종료 시각</th>
+                            <th style="white-space:nowrap">키반납 시각</th>
+                            <th>대기(초)</th>
+                            <th>처리(초)</th>
+                            <th class="col-server hidden">서버</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tlBody">
+                        <tr><td colspan="10" style="text-align:center;padding:32px;color:#9ca3af">조회 버튼을 눌러 데이터를 로드하세요.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="tlPager" style="display:flex;gap:8px;align-items:center;margin-top:14px;flex-wrap:wrap"></div>
+        </div>
+
         <!-- 사용자 추적 패널 -->
         <div class="section hidden" id="panel-trace">
             <h2>사용자 추적</h2>
@@ -944,7 +979,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-    <script src="{% static 'analyzer/app.js' %}?v=14"></script>
+    <script src="{% static 'analyzer/app.js' %}?v=15"></script>
 </body>
 
 </html>

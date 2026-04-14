@@ -53,9 +53,11 @@
   // 탭/패널
   const $tabTrace    = document.querySelector('.nav-tab[data-tab="trace"]');
   const $tabDash     = document.querySelector('.nav-tab[data-tab="dash"]');
+  const $tabTimeline = document.querySelector('.nav-tab[data-tab="timeline"]');
   const $panelAnalyze= $('#panel-analyze');
   const $panelTrace  = $('#panel-trace');
   const $panelDash   = $('#panel-dash');
+  const $panelTimeline = $('#panel-timeline');
 
   const CODE_DESC = {
     '300': 'ServerSide Bypass',   '301': 'ServerSide Block',
@@ -305,8 +307,9 @@
   function showTab(name) {
     document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
     document.querySelector(`.nav-tab[data-tab="${name}"]`)?.classList.add('active');
-    [$panelAnalyze, $panelTrace, $panelDash].forEach(p => p?.classList.add('hidden'));
+    [$panelAnalyze, $panelTrace, $panelDash, $panelTimeline].forEach(p => p?.classList.add('hidden'));
     document.getElementById(`panel-${name}`)?.classList.remove('hidden');
+    if (name === 'timeline') doTimeline(0);
   }
   function bindTabsOnce() {
     document.querySelectorAll('.nav-tab').forEach(tab => {
@@ -316,7 +319,7 @@
     });
   }
   function enableResultTabs() {
-    [$tabTrace, $tabDash].forEach(t => {
+    [$tabTrace, $tabDash, $tabTimeline].forEach(t => {
       if (!t) return;
       t.classList.remove('disabled');
       t.removeAttribute('title');
@@ -409,12 +412,24 @@
     hideProgress();
   });
 
+  // ====== 분석 시간범위 → 대시보드·타임라인·사용자추적 자동 채우기 ======
+  function autoFillTimeFilters() {
+    const ds = $dateStart?.value, ts = $timeStart?.value;
+    const de = $dateEnd?.value,   te = $timeEnd?.value;
+    if (!ds || !ts) return;   // 시간 범위 미설정 시 건너뜀
+    const fromVal = `${ds}T${ts}`;
+    const toVal   = (de && te) ? `${de}T${te}` : '';
+    [$dashFrom, $('#tl-from'), $('#trace-from')].forEach(el => { if (el) el.value = fromVal; });
+    if (toVal) [$dashTo, $('#tl-to'), $('#trace-to')].forEach(el => { if (el) el.value = toVal; });
+  }
+
   // ====== 결과 처리 ======
   function handleResult(data) {
     lastResult  = data;
     lastServers = data.servers || [];
 
     if (data.range) setDetectedRange(data.range);
+    autoFillTimeFilters();
 
     const isMulti = lastServers.length > 1;
     renderResult(data, isMulti);
@@ -1072,6 +1087,114 @@
   });
   $traceIp?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); $traceBtn?.click(); }
+  });
+
+  // ====== 세션 타임라인 ======
+  const TL_LIMIT = 500;
+  const ENTRY_LABEL = { '5101': '즉시진입', '5002': '대기진입', '5101+5002': '대기+즉시', '-': '-' };
+  const TL_STATUS_CLASS = { '완료': 'status-done', '대기이탈': 'status-wait-out', '진입이탈': 'status-enter-out', '진행중': 'status-ongoing' };
+  let tlAllRows = [];  // CSV용 현재 페이지 rows
+
+  async function doTimeline(offset = 0) {
+    if (!lastResult) return;
+    const hint  = document.getElementById('tlHint');
+    const tbody = document.getElementById('tlBody');
+    if (hint)  hint.textContent = '조회 중...';
+    if (tbody) tbody.innerHTML  = `<tr><td colspan="10" style="text-align:center;padding:32px;color:#9ca3af">로딩 중...</td></tr>`;
+
+    const fromVal = document.getElementById('tl-from')?.value;
+    const toVal   = document.getElementById('tl-to')?.value;
+    let url = `/api/timeline/?offset=${offset}&limit=${TL_LIMIT}`;
+    if (fromVal) url += `&from=${encodeURIComponent(fromVal.replace('T', ' '))}`;
+    if (toVal)   url += `&to=${encodeURIComponent(toVal.replace('T', ' '))}`;
+
+    try {
+      const resp = await fetch(url);
+      const data = await resp.json();
+      if (data.error) { if (hint) hint.textContent = data.error; return; }
+
+      tlAllRows = data.rows;
+      const total = data.total;
+      const from  = offset + 1;
+      const to    = Math.min(offset + data.rows.length, total);
+      if (hint) hint.textContent = `총 ${total.toLocaleString('ko-KR')}건 중 ${from.toLocaleString('ko-KR')}~${to.toLocaleString('ko-KR')}건 표시`;
+
+      // 서버 열 표시 여부
+      document.querySelectorAll('#tlTable .col-server').forEach(el =>
+        el.classList.toggle('hidden', !data.isMulti));
+
+      if (!data.rows.length) {
+        if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:32px;color:#9ca3af">해당 시간대 데이터 없음</td></tr>`;
+      } else {
+        if (tbody) tbody.innerHTML = data.rows.map(r => `
+          <tr>
+            <td style="white-space:nowrap;font-size:13px">${r.start}</td>
+            <td><span class="mono" style="font-size:13px">${r.tid}</span></td>
+            <td><a href="#" class="tl-ip-link" data-ip="${r.ip}" style="color:#4f46e5;text-decoration:none;font-size:13px">${r.ip}</a></td>
+            <td><span class="entry-type">${ENTRY_LABEL[r.entry] || r.entry}</span></td>
+            <td><span class="status-badge ${TL_STATUS_CLASS[r.status] || ''}">${r.status}</span></td>
+            <td style="white-space:nowrap;font-size:13px">${r.end || '-'}</td>
+            <td style="white-space:nowrap;font-size:13px">${r.done || '-'}</td>
+            <td style="text-align:right;font-size:13px">${r.waitSec || '-'}</td>
+            <td style="text-align:right;font-size:13px">${r.durSec != null ? r.durSec : '-'}</td>
+            <td class="col-server ${data.isMulti ? '' : 'hidden'}" style="font-size:13px">${r.server || '-'}</td>
+          </tr>`).join('');
+
+        // IP 클릭 → 사용자 추적
+        document.querySelectorAll('#tlBody .tl-ip-link').forEach(a => {
+          a.addEventListener('click', e => {
+            e.preventDefault();
+            const ip = a.dataset.ip;
+            if ($traceIp) $traceIp.value = ip;
+            showTab('trace');
+            doTrace(ip);
+          });
+        });
+      }
+
+      // 페이지네이션
+      renderTlPager(total, offset, data.limit);
+    } catch (err) {
+      if (hint) hint.textContent = '조회 실패: ' + err.message;
+    }
+  }
+
+  function renderTlPager(total, offset, limit) {
+    const pager = document.getElementById('tlPager');
+    if (!pager) return;
+    pager.innerHTML = '';
+    if (total <= limit) return;
+    const totalPages  = Math.ceil(total / limit);
+    const currentPage = Math.floor(offset / limit);
+    const addBtn = (label, targetOffset, disabled) => {
+      const btn = document.createElement('button');
+      btn.className = 'ghost';
+      btn.style.cssText = 'padding:6px 14px;font-size:13px';
+      btn.textContent = label;
+      btn.disabled = disabled;
+      if (!disabled) btn.addEventListener('click', () => doTimeline(targetOffset));
+      pager.appendChild(btn);
+    };
+    addBtn('◀ 이전', (currentPage - 1) * limit, currentPage === 0);
+    const info = document.createElement('span');
+    info.className = 'subtle';
+    info.style.cssText = 'padding:0 8px;align-self:center';
+    info.textContent = `${currentPage + 1} / ${totalPages} 페이지`;
+    pager.appendChild(info);
+    addBtn('다음 ▶', (currentPage + 1) * limit, currentPage >= totalPages - 1);
+  }
+
+  document.getElementById('tlFilterBtn')?.addEventListener('click', () => doTimeline(0));
+  document.getElementById('tlResetBtn')?.addEventListener('click', () => {
+    const f = document.getElementById('tl-from');
+    const t = document.getElementById('tl-to');
+    if (f) f.value = ''; if (t) t.value = '';
+    doTimeline(0);
+  });
+  document.getElementById('tlCsvBtn')?.addEventListener('click', () => {
+    if (!tlAllRows.length) { alert('데이터 없음'); return; }
+    downloadCSV('timeline.csv', tlAllRows,
+      ['start','tid','ip','entry','status','end','done','waitSec','durSec','server']);
   });
 
   // ====== 대시보드 시간 필터 ======

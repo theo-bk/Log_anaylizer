@@ -540,6 +540,84 @@ def trace_ip(request):
     }})
 
 
+# ===== 세션 타임라인 API =====
+
+@csrf_exempt
+def timeline(request):
+    """GET /api/timeline/?from=...&to=...&offset=0&limit=500
+    캐시된 전체 세션을 시간순으로 반환. 시간대 필터·페이지네이션 지원."""
+    sessions = _last_result_cache.get('sessions')
+    if not sessions:
+        return JsonResponse({'error': '먼저 로그 분석을 실행하세요.'}, status=400)
+
+    time_from = request.GET.get('from', '').strip()
+    time_to   = request.GET.get('to',   '').strip()
+    try:
+        offset = max(0, int(request.GET.get('offset', 0)))
+        limit  = min(2000, max(1, int(request.GET.get('limit', 500))))
+    except ValueError:
+        offset, limit = 0, 500
+
+    dropout_201       = _last_result_cache.get('dropout_201') or set()
+    dropout_200       = _last_result_cache.get('dropout_200') or set()
+    server_prefix_map = _last_result_cache.get('server_prefix_map') or {}
+
+    rows = []
+    for t, s in sessions.items():
+        _sid, _aid, tid_k = t
+        flags  = s[1]
+        st     = s[2]   # 키 발급 시각
+        we     = s[3]   # 대기 종료 시각
+        done_t = s[4]   # 키 반납(5004) 시각
+
+        start_str = epoch_to_str(st) if st else ''
+        if time_from and start_str and start_str < time_from:
+            continue
+        if time_to and start_str and start_str > time_to:
+            continue
+
+        has_5004 = bool(flags & 4)
+        has_5002 = bool(flags & 2)
+        has_5101 = bool(flags & 1)
+
+        status = '완료' if has_5004 else (
+            '대기이탈' if t in dropout_201 else (
+                '진입이탈' if t in dropout_200 else '진행중'))
+        entry = '5101+5002' if (has_5101 and has_5002) else (
+            '5101' if has_5101 else ('5002' if has_5002 else '-'))
+        wait_sec = round(we - st, 1) if (has_5002 and st and we) else 0
+        dur_sec  = round(done_t - st, 1) if (has_5004 and st and done_t) else None
+
+        server = ''
+        for prefix, srv_label in server_prefix_map.items():
+            if _sid.startswith(prefix):
+                server = srv_label
+                break
+
+        rows.append({
+            'start':   start_str,
+            'tid':     tid_k,
+            'ip':      s[0],
+            'entry':   entry,
+            'status':  status,
+            'end':     epoch_to_str(we) if we else '',
+            'done':    epoch_to_str(done_t) if (has_5004 and done_t) else '',
+            'waitSec': wait_sec,
+            'durSec':  dur_sec,
+            'server':  server,
+        })
+
+    rows.sort(key=lambda x: x['start'])
+    total = len(rows)
+    return JsonResponse({
+        'total':   total,
+        'offset':  offset,
+        'limit':   limit,
+        'isMulti': bool(server_prefix_map),
+        'rows':    rows[offset:offset + limit],
+    })
+
+
 # ===== 업로드 방식 (소용량용, 기존 호환) =====
 
 @csrf_exempt
