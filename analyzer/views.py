@@ -340,7 +340,7 @@ def analyze_by_path(request):
     GET /api/analyze_path/?path=...&pj=...&seg=...
     서버에서 파일을 직접 읽어 분석 후 JSON 반환.
     """
-    file_path = request.GET.get('path', '').strip()
+    file_path = request.GET.get('path', '').strip().strip("'\"")
     if not file_path or not os.path.isfile(file_path):
         return JsonResponse({'error': f'파일을 찾을 수 없습니다: {file_path}'}, status=400)
 
@@ -378,7 +378,7 @@ def analyze_by_path(request):
 @csrf_exempt
 def range_by_path(request):
     """GET /api/range_path/?path=... → 시간범위만 빠르게 반환 (첫/끝 100줄만 스캔)."""
-    file_path = request.GET.get('path', '').strip()
+    file_path = request.GET.get('path', '').strip().strip("'\"")
     if not file_path or not os.path.isfile(file_path):
         return JsonResponse({'error': f'파일을 찾을 수 없습니다: {file_path}'}, status=400)
 
@@ -665,7 +665,7 @@ def analyze_multi(request):
 
     for i in range(count):
         label = (request.POST.get(f'label_{i}') or f'서버 {i + 1}').strip()
-        path = request.POST.get(f'path_{i}', '').strip()
+        path = request.POST.get(f'path_{i}', '').strip().strip("'\"")
         f = request.FILES.get(f'file_{i}')
 
         if path:
