@@ -194,6 +194,7 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
     entry_ips = set()
 
     gaps_5002 = []
+    req_per_sec = defaultdict(int)  # second_epoch → 요청 수 (5101/5002, JS timestamp 단위 집계용)
     ts_req  = defaultdict(int)   # minute_epoch → 요청 수 (5101/5002 200·201)
     ts_wait = defaultdict(int)   # minute_epoch → 대기 수 (5002 201)
     ts_done = defaultdict(int)   # minute_epoch → 완료 수 (5004)
@@ -334,6 +335,7 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
         minute = (tsec // 60) * 60
         if opcode in (5101, 5002):
             ts_req[minute] += 1
+            req_per_sec[tsec] += 1   # 초 단위 집계 (JS timestamp 역추적용)
             if status_code == 201:
                 ts_wait[minute] += 1
         elif opcode == 5004:
@@ -545,6 +547,7 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
             'ts_req': dict(ts_req),
             'ts_wait': dict(ts_wait),
             'ts_done': dict(ts_done),
+            'req_per_sec': dict(req_per_sec),          # 초 단위 요청 수 (JS timestamp 집계)
         },
         'quitWaitRows': quit_wait_rows,
         'postEnterRows': post_enter_rows,

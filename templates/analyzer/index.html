@@ -926,6 +926,8 @@
                 <div><label>종료 시간</label><br /><input id="tl-to" type="datetime-local" step="1" style="width:200px" /></div>
                 <button id="tlFilterBtn" class="ghost">조회</button>
                 <button id="tlResetBtn" class="ghost">전체</button>
+                <button id="tlSortTimeBtn" class="ghost" title="키 발급 시각 순 정렬">시각 순</button>
+                <button id="tlSortBurstBtn" class="ghost" title="같은 초(1초)에 요청이 집중된 순서로 정렬">집중 순 ↓</button>
                 <button id="tlCsvBtn" class="ghost">CSV 다운로드</button>
                 <span class="subtle" id="tlHint"></span>
             </div>
@@ -942,6 +944,7 @@
                             <th style="white-space:nowrap">키반납 시각</th>
                             <th>대기(초)</th>
                             <th>처리(초)</th>
+                            <th title="같은 1초 안에 발생한 요청 수 (JS timestamp 기준)">동시요청</th>
                             <th class="col-server hidden">서버</th>
                         </tr>
                     </thead>
@@ -993,7 +996,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-    <script src="{% static 'analyzer/app.js' %}?v=17"></script>
+    <script src="{% static 'analyzer/app.js' %}?v=18"></script>
 </body>
 
 </html>

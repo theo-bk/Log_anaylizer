@@ -79,6 +79,7 @@ def _cache_internal(result, params=None):
     _last_result_cache['ip_times'] = result.get('_ip_times')
     _last_result_cache['ip_to_tids'] = result.get('_ip_to_tids')
     _last_result_cache['server_prefix_map'] = {}
+    _last_result_cache['req_per_sec'] = result.get('_raw', {}).get('req_per_sec') or {}
     if params:
         _last_result_cache['analysis_params'] = {
             'pj': params.get('pj', ''),
@@ -139,6 +140,12 @@ def _cache_multi_internal(labeled_results, params=None):
     _last_result_cache['server_prefix_map'] = {
         f'{idx}:': label for idx, (label, _) in enumerate(labeled_results)
     }
+    # 초 단위 요청 수 병합
+    merged_rps = defaultdict(int)
+    for _, result in labeled_results:
+        for sec, cnt in (result.get('_raw', {}).get('req_per_sec') or {}).items():
+            merged_rps[sec] += cnt
+    _last_result_cache['req_per_sec'] = dict(merged_rps)
     if params:
         _last_result_cache['analysis_params'] = {
             'pj': params.get('pj', ''),
@@ -581,9 +588,11 @@ def timeline(request):
     except ValueError:
         offset, limit = 0, 500
 
+    sort_by = request.GET.get('sort', 'time')   # 'time' | 'burst'
     dropout_201       = _last_result_cache.get('dropout_201') or set()
     dropout_200       = _last_result_cache.get('dropout_200') or set()
     server_prefix_map = _last_result_cache.get('server_prefix_map') or {}
+    req_per_sec       = _last_result_cache.get('req_per_sec') or {}
     ap = _last_result_cache.get('analysis_params') or {}
     timeout_sec = float(ap.get('timeout_sec', 20))
 
@@ -613,6 +622,7 @@ def timeline(request):
         wait_sec = round(we - st, 1) if (has_5002 and st and we) else 0
         dur_sec  = round(done_t - st, 1) if (has_5004 and st and done_t) else None
         dur_exceeded = (dur_sec is not None and dur_sec > timeout_sec)
+        burst = req_per_sec.get(st, 0) if st else 0
 
         server = ''
         for prefix, srv_label in server_prefix_map.items():
@@ -631,10 +641,14 @@ def timeline(request):
             'waitSec':     wait_sec,
             'durSec':      dur_sec,
             'durExceeded': dur_exceeded,
+            'burst':       burst,
             'server':      server,
         })
 
-    rows.sort(key=lambda x: x['start'])
+    if sort_by == 'burst':
+        rows.sort(key=lambda x: (-x['burst'], x['start']))
+    else:
+        rows.sort(key=lambda x: x['start'])
     total = len(rows)
     return JsonResponse({
         'total':   total,

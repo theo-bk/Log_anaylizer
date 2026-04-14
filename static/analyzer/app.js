@@ -1100,19 +1100,20 @@
   const ENTRY_LABEL = { '5101': '즉시진입', '5002': '대기진입', '5101+5002': '대기+즉시', '-': '-' };
   const TL_STATUS_CLASS = { '완료': 'status-done', '대기이탈': 'status-wait-out', '진입이탈': 'status-enter-out', '진행중': 'status-ongoing' };
   let tlAllRows = [];  // CSV용 현재 페이지 rows
+  let tlSort = 'time'; // 'time' | 'burst'
 
   async function doTimeline(offset = 0) {
     if (!lastResult) return;
     const hint  = document.getElementById('tlHint');
     const tbody = document.getElementById('tlBody');
     if (hint)  hint.textContent = '조회 중...';
-    if (tbody) tbody.innerHTML  = `<tr><td colspan="10" style="text-align:center;padding:32px;color:#9ca3af">로딩 중...</td></tr>`;
+    if (tbody) tbody.innerHTML  = `<tr><td colspan="11" style="text-align:center;padding:32px;color:#9ca3af">로딩 중...</td></tr>`;
     const paramsBarLoading = document.getElementById('tlParamsBar');
     if (paramsBarLoading) paramsBarLoading.textContent = '';
 
     const fromVal = document.getElementById('tl-from')?.value;
     const toVal   = document.getElementById('tl-to')?.value;
-    let url = `/api/timeline/?offset=${offset}&limit=${TL_LIMIT}`;
+    let url = `/api/timeline/?offset=${offset}&limit=${TL_LIMIT}&sort=${tlSort}`;
     if (fromVal) url += `&from=${encodeURIComponent(fromVal.replace('T', ' '))}`;
     if (toVal)   url += `&to=${encodeURIComponent(toVal.replace('T', ' '))}`;
 
@@ -1140,10 +1141,22 @@
       document.querySelectorAll('#tlTable .col-server').forEach(el =>
         el.classList.toggle('hidden', !data.isMulti));
 
+      // 집중 순 정렬일 때 최대 burst 값 (배경 강조 기준)
+      const maxBurst = tlSort === 'burst' && data.rows.length
+        ? Math.max(...data.rows.map(r => r.burst || 0)) : 0;
+
       if (!data.rows.length) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;padding:32px;color:#9ca3af">해당 시간대 데이터 없음</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:32px;color:#9ca3af">해당 시간대 데이터 없음</td></tr>`;
       } else {
-        if (tbody) tbody.innerHTML = data.rows.map(r => `
+        if (tbody) tbody.innerHTML = data.rows.map(r => {
+          const burst = r.burst || 0;
+          // 동시요청 수 배경: 최대값 대비 비율로 열강도 표시
+          const burstRatio = maxBurst > 1 ? burst / maxBurst : 0;
+          const burstBg = burstRatio > 0.7 ? 'background:#fee2e2;color:#b91c1c;font-weight:700'
+                        : burstRatio > 0.4 ? 'background:#ffedd5;color:#c2410c;font-weight:600'
+                        : burstRatio > 0.1 ? 'background:#fef9c3;color:#854d0e'
+                        : 'color:#6b7280';
+          return `
           <tr>
             <td><a href="#" class="tl-ip-link" data-ip="${r.ip}" style="color:#4f46e5;text-decoration:none;font-size:13px">${r.ip}</a></td>
             <td><span class="mono" style="font-size:13px">${r.tid}</span></td>
@@ -1154,8 +1167,10 @@
             <td style="white-space:nowrap;font-size:13px">${r.done || '-'}</td>
             <td style="text-align:right;font-size:13px">${r.waitSec || '-'}</td>
             <td style="text-align:right;font-size:13px;${r.durExceeded ? 'color:#ef4444;font-weight:700' : ''}">${r.durSec != null ? r.durSec : '-'}</td>
+            <td style="text-align:right;font-size:13px;${burstBg}">${burst}</td>
             <td class="col-server ${data.isMulti ? '' : 'hidden'}" style="font-size:13px">${r.server || '-'}</td>
-          </tr>`).join('');
+          </tr>`;
+        }).join('');
 
         // IP 클릭 → 사용자 추적
         document.querySelectorAll('#tlBody .tl-ip-link').forEach(a => {
@@ -1201,6 +1216,15 @@
     addBtn('다음 ▶', (currentPage + 1) * limit, currentPage >= totalPages - 1);
   }
 
+  function updateTlSortButtons() {
+    const btnTime  = document.getElementById('tlSortTimeBtn');
+    const btnBurst = document.getElementById('tlSortBurstBtn');
+    if (btnTime)  btnTime.style.background  = tlSort === 'time'  ? '#4f46e5' : '';
+    if (btnTime)  btnTime.style.color       = tlSort === 'time'  ? '#fff'    : '';
+    if (btnBurst) btnBurst.style.background = tlSort === 'burst' ? '#4f46e5' : '';
+    if (btnBurst) btnBurst.style.color      = tlSort === 'burst' ? '#fff'    : '';
+  }
+
   document.getElementById('tlFilterBtn')?.addEventListener('click', () => doTimeline(0));
   document.getElementById('tlResetBtn')?.addEventListener('click', () => {
     const f = document.getElementById('tl-from');
@@ -1208,10 +1232,16 @@
     if (f) f.value = ''; if (t) t.value = '';
     doTimeline(0);
   });
+  document.getElementById('tlSortTimeBtn')?.addEventListener('click', () => {
+    tlSort = 'time'; updateTlSortButtons(); doTimeline(0);
+  });
+  document.getElementById('tlSortBurstBtn')?.addEventListener('click', () => {
+    tlSort = 'burst'; updateTlSortButtons(); doTimeline(0);
+  });
   document.getElementById('tlCsvBtn')?.addEventListener('click', () => {
     if (!tlAllRows.length) { alert('데이터 없음'); return; }
     downloadCSV('timeline.csv', tlAllRows,
-      ['start','tid','ip','entry','status','end','done','waitSec','durSec','server']);
+      ['start','tid','ip','entry','status','end','done','waitSec','durSec','burst','server']);
   });
 
   // ====== 대시보드 시간 필터 ======
