@@ -128,8 +128,9 @@ def percent(part, total):
 
 # ===================== Range Scanner =====================
 
-def compute_range(lines_iter, max_field_scan=200_000):
+def compute_range(lines_iter, max_field_scan=200_000, log_tz='UTC'):
     """타임스탬프 범위를 스캔하면서 sid(프로젝트)/aid(세그먼트) 고유값도 수집."""
+    tz_adjust = -32400 if log_tz == 'KST' else 0
     first_ts = None
     last_ts = None
     sids = set()
@@ -139,7 +140,7 @@ def compute_range(lines_iter, max_field_scan=200_000):
         line = raw_line.rstrip('\r\n') if isinstance(raw_line, str) else raw_line.decode('utf-8', errors='replace').rstrip('\r\n')
         dt = parse_timestamp(line)
         if dt is not None:
-            sec = int(dt.timestamp())
+            sec = int(dt.timestamp()) + tz_adjust
             if first_ts is None or sec < first_ts:
                 first_ts = sec
             if last_ts is None or sec > last_ts:
@@ -167,7 +168,9 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
                  rps_enabled=False, rps_min=1, rps_max=10,
                  hold_enabled=False, hold_sec=60,
                  timeout_sec=20,
+                 log_tz='UTC',
                  progress_callback=None):
+    tz_adjust = -32400 if log_tz == 'KST' else 0
     target_proj_seg = f'{pj}.{seg}' if pj and seg and not seg_all else None
 
     TTL_MIN = max(0, rps_min) if rps_enabled else 1
@@ -243,6 +246,7 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
         tsec = _parse_epoch(raw_line)
         if not tsec:
             continue
+        tsec += tz_adjust
 
         if first_ts_sec is None or tsec < first_ts_sec:
             first_ts_sec = tsec

@@ -84,6 +84,7 @@ def _cache_internal(result, params=None):
             'pj': params.get('pj', ''),
             'seg': params.get('seg', ''),
             'timeout_sec': params.get('timeout_sec', 20),
+            'log_tz': params.get('log_tz', 'UTC'),
         }
 
 
@@ -143,6 +144,7 @@ def _cache_multi_internal(labeled_results, params=None):
             'pj': params.get('pj', ''),
             'seg': params.get('seg', ''),
             'timeout_sec': params.get('timeout_sec', 20),
+            'log_tz': params.get('log_tz', 'UTC'),
         }
 
 
@@ -336,12 +338,15 @@ def _get_params(request):
     hold_enabled = g('holdEnabled') == 'true'
     hold_sec_val = float(g('holdSec') or 60)
     timeout_sec = float(g('timeoutSec') or 20)
+    log_tz = (g('logTz') or 'UTC').upper()
+    if log_tz not in ('UTC', 'KST'):
+        log_tz = 'UTC'
     return dict(
         pj=pj, seg=seg, seg_all=seg_all,
         start_sec=start_sec, end_sec=end_sec,
         rps_enabled=rps_enabled, rps_min=rps_min, rps_max=rps_max,
         hold_enabled=hold_enabled, hold_sec=hold_sec_val,
-        timeout_sec=timeout_sec,
+        timeout_sec=timeout_sec, log_tz=log_tz,
     )
 
 
@@ -370,7 +375,7 @@ def analyze_by_path(request):
         rps_enabled=params['rps_enabled'], rps_min=params['rps_min'],
         rps_max=params['rps_max'],
         hold_enabled=params['hold_enabled'], hold_sec=params['hold_sec'],
-        timeout_sec=params['timeout_sec'],
+        timeout_sec=params['timeout_sec'], log_tz=params['log_tz'],
     )
 
     elapsed = round(time.time() - start_time, 1)
@@ -395,6 +400,11 @@ def range_by_path(request):
     if not file_path or not os.path.isfile(file_path):
         return JsonResponse({'error': f'파일을 찾을 수 없습니다: {file_path}'}, status=400)
 
+    log_tz = (request.GET.get('logTz') or 'UTC').upper()
+    if log_tz not in ('UTC', 'KST'):
+        log_tz = 'UTC'
+    tz_adjust = -32400 if log_tz == 'KST' else 0
+
     file_size = os.path.getsize(file_path)
 
     first_ts = None
@@ -412,7 +422,7 @@ def range_by_path(request):
                 break
             dt = parse_timestamp(line)
             if dt:
-                sec = int(dt.timestamp())
+                sec = int(dt.timestamp()) + tz_adjust
                 if first_ts is None or sec < first_ts:
                     first_ts = sec
                 if last_ts is None or sec > last_ts:
@@ -434,7 +444,7 @@ def range_by_path(request):
     for line in tail_text.split('\n')[-100:]:
         dt = parse_timestamp(line)
         if dt:
-            sec = int(dt.timestamp())
+            sec = int(dt.timestamp()) + tz_adjust
             if first_ts is None or sec < first_ts:
                 first_ts = sec
             if last_ts is None or sec > last_ts:
@@ -659,7 +669,7 @@ def analyze(request):
         rps_enabled=params['rps_enabled'], rps_min=params['rps_min'],
         rps_max=params['rps_max'],
         hold_enabled=params['hold_enabled'], hold_sec=params['hold_sec'],
-        timeout_sec=params['timeout_sec'],
+        timeout_sec=params['timeout_sec'], log_tz=params['log_tz'],
     )
 
     _cache_internal(result, params)
@@ -674,8 +684,11 @@ def get_range(request):
     f = request.FILES.get('file')
     if not f:
         return JsonResponse({'error': '파일이 없습니다.'}, status=400)
+    log_tz = (request.POST.get('logTz') or 'UTC').upper()
+    if log_tz not in ('UTC', 'KST'):
+        log_tz = 'UTC'
     lines = _stream_lines_from_upload(f)
-    result = compute_range(lines)
+    result = compute_range(lines, log_tz=log_tz)
     return JsonResponse(result)
 
 
@@ -786,7 +799,7 @@ def analyze_multi(request):
             rps_enabled=params['rps_enabled'], rps_min=params['rps_min'],
             rps_max=params['rps_max'],
             hold_enabled=params['hold_enabled'], hold_sec=params['hold_sec'],
-            timeout_sec=params['timeout_sec'],
+            timeout_sec=params['timeout_sec'], log_tz=params['log_tz'],
         )
         labeled_results.append((label, result))
 

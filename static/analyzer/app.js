@@ -222,7 +222,7 @@
           return;
         }
         try {
-          const resp = await fetch(`/api/range_path/?path=${encodeURIComponent(path)}`);
+          const resp = await fetch(`/api/range_path/?path=${encodeURIComponent(path)}&logTz=${getLogTz()}`);
           const data = await resp.json();
           if (data.error) { infoEl.textContent = data.error; serverRanges[idx] = null; delete serverFieldCache[idx]; }
           else {
@@ -244,7 +244,7 @@
       if (!f) return;
       fileNameEl.textContent = `${f.name} (${(f.size / 1024 / 1024).toFixed(1)} MB)`;
       setProgress(10);
-      const fd = new FormData(); fd.append('file', f);
+      const fd = new FormData(); fd.append('file', f); fd.append('logTz', getLogTz());
       try {
         const resp = await fetch('/api/range/', { method: 'POST', body: fd });
         const data = await resp.json();
@@ -341,6 +341,11 @@
   $chkHold?.addEventListener('change', toggleHoldFields);
   toggleRPSFields(); toggleHoldFields();
 
+  // ====== 로그 타임존 ======
+  function getLogTz() {
+    return document.querySelector('input[name="logTz"]:checked')?.value || 'KST';
+  }
+
   // ====== 분석 공통 파라미터 ======
   function getQueryParams() {
     const { startSec, endSec } = toEpochFromInputs();
@@ -356,6 +361,7 @@
     p.set('holdEnabled', $chkHold?.checked ? 'true' : 'false');
     p.set('holdSec', $holdSec?.value || '60');
     p.set('timeoutSec', document.getElementById('timeoutSec')?.value || '20');
+    p.set('logTz', getLogTz());
     return p;
   }
 
