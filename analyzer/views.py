@@ -342,7 +342,7 @@ def analyze_by_path(request):
     """
     file_path = request.GET.get('path', '').strip()
     if not file_path or not os.path.isfile(file_path):
-        return JsonResponse({'error': f'서버에서 파일을 찾을 수 없습니다: {file_path} — 브라우저 로컬 경로가 아닌 Django 서버 머신의 절대 경로를 입력하세요. 로컬 파일은 아래 [파일 업로드]를 사용하세요.'}, status=400)
+        return JsonResponse({'error': f'파일을 찾을 수 없습니다: {file_path}'}, status=400)
 
     params = _get_params(request)
     file_size = os.path.getsize(file_path)
@@ -380,7 +380,7 @@ def range_by_path(request):
     """GET /api/range_path/?path=... → 시간범위만 빠르게 반환 (첫/끝 100줄만 스캔)."""
     file_path = request.GET.get('path', '').strip()
     if not file_path or not os.path.isfile(file_path):
-        return JsonResponse({'error': f'서버에서 파일을 찾을 수 없습니다: {file_path} — 브라우저 로컬 경로가 아닌 Django 서버 머신의 절대 경로를 입력하세요. 로컬 파일은 아래 [파일 업로드]를 사용하세요.'}, status=400)
+        return JsonResponse({'error': f'파일을 찾을 수 없습니다: {file_path}'}, status=400)
 
     file_size = os.path.getsize(file_path)
 

@@ -194,12 +194,12 @@
       </div>
       <div style="display:flex;flex-direction:column;gap:6px">
         <div>
-          <label style="font-size:12px;color:#6b7280">서버 경로 <span style="color:#9ca3af;font-weight:400">(Django가 실행 중인 서버 기준 절대 경로, 대용량 추천)</span></label><br/>
-          <input class="srv-path" type="text" placeholder="예: /data/logs/access.log" style="width:100%;font-size:14px"/>
+          <label style="font-size:12px;color:#6b7280">파일 경로 (대용량 추천)</label><br/>
+          <input class="srv-path" type="text" placeholder="예: /var/log/access.log" style="width:100%;font-size:14px"/>
           <div class="srv-fileinfo subtle" style="font-size:12px"></div>
         </div>
         <div>
-          <label style="font-size:12px;color:#6b7280">파일 업로드 <span style="color:#9ca3af;font-weight:400">(브라우저에서 직접 선택)</span></label><br/>
+          <label style="font-size:12px;color:#6b7280">또는 파일 업로드</label><br/>
           <input class="srv-file" type="file" accept=".txt,.log"/>
           <div class="srv-filename subtle" style="font-size:12px">선택된 파일 없음</div>
         </div>
