@@ -907,6 +907,7 @@
 
         <!-- 세션 타임라인 패널 -->
         <div class="section hidden" id="panel-timeline">
+            <div id="tlParamsBar" class="subtle" style="margin-bottom:8px"></div>
             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:4px">
                 <div><label>시작 시간</label><br /><input id="tl-from" type="datetime-local" step="1" style="width:200px" /></div>
                 <div><label>종료 시간</label><br /><input id="tl-to" type="datetime-local" step="1" style="width:200px" /></div>
@@ -919,9 +920,9 @@
                 <table class="table" id="tlTable">
                     <thead>
                         <tr>
-                            <th style="white-space:nowrap">키발급 시각</th>
-                            <th>TID</th>
                             <th>IP</th>
+                            <th>TID</th>
+                            <th style="white-space:nowrap">키발급 시각</th>
                             <th>진입유형</th>
                             <th>상태</th>
                             <th style="white-space:nowrap">대기종료 시각</th>
@@ -979,7 +980,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-    <script src="{% static 'analyzer/app.js' %}?v=15"></script>
+    <script src="{% static 'analyzer/app.js' %}?v=16"></script>
 </body>
 
 </html>

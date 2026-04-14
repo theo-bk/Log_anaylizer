@@ -428,8 +428,8 @@
     lastResult  = data;
     lastServers = data.servers || [];
 
-    if (data.range) setDetectedRange(data.range);
-    autoFillTimeFilters();
+    autoFillTimeFilters();                           // ① 분석 시간범위 먼저 복사 (덮어쓰이기 전에)
+    if (data.range) setDetectedRange(data.range);   // ② 그 후 파일 전체 범위로 입력 업데이트
 
     const isMulti = lastServers.length > 1;
     renderResult(data, isMulti);
@@ -1101,6 +1101,8 @@
     const tbody = document.getElementById('tlBody');
     if (hint)  hint.textContent = '조회 중...';
     if (tbody) tbody.innerHTML  = `<tr><td colspan="10" style="text-align:center;padding:32px;color:#9ca3af">로딩 중...</td></tr>`;
+    const paramsBarLoading = document.getElementById('tlParamsBar');
+    if (paramsBarLoading) paramsBarLoading.textContent = '';
 
     const fromVal = document.getElementById('tl-from')?.value;
     const toVal   = document.getElementById('tl-to')?.value;
@@ -1117,6 +1119,15 @@
       const total = data.total;
       const from  = offset + 1;
       const to    = Math.min(offset + data.rows.length, total);
+      // 분석 파라미터 표시
+      const ap = data.analysisParams || {};
+      const paramsBar = document.getElementById('tlParamsBar');
+      if (paramsBar) {
+        const pjStr  = ap.pj  ? `PJ: ${ap.pj}`   : '전체 PJ';
+        const segStr = ap.seg ? `SEG: ${ap.seg}`  : '전체 SEG';
+        paramsBar.textContent = `[분석 조건] ${pjStr} / ${segStr} / 처리시간 타임아웃: ${ap.timeoutSec ?? 20}초`;
+      }
+
       if (hint) hint.textContent = `총 ${total.toLocaleString('ko-KR')}건 중 ${from.toLocaleString('ko-KR')}~${to.toLocaleString('ko-KR')}건 표시`;
 
       // 서버 열 표시 여부
@@ -1128,15 +1139,15 @@
       } else {
         if (tbody) tbody.innerHTML = data.rows.map(r => `
           <tr>
-            <td style="white-space:nowrap;font-size:13px">${r.start}</td>
-            <td><span class="mono" style="font-size:13px">${r.tid}</span></td>
             <td><a href="#" class="tl-ip-link" data-ip="${r.ip}" style="color:#4f46e5;text-decoration:none;font-size:13px">${r.ip}</a></td>
+            <td><span class="mono" style="font-size:13px">${r.tid}</span></td>
+            <td style="white-space:nowrap;font-size:13px">${r.start}</td>
             <td><span class="entry-type">${ENTRY_LABEL[r.entry] || r.entry}</span></td>
             <td><span class="status-badge ${TL_STATUS_CLASS[r.status] || ''}">${r.status}</span></td>
             <td style="white-space:nowrap;font-size:13px">${r.end || '-'}</td>
             <td style="white-space:nowrap;font-size:13px">${r.done || '-'}</td>
             <td style="text-align:right;font-size:13px">${r.waitSec || '-'}</td>
-            <td style="text-align:right;font-size:13px">${r.durSec != null ? r.durSec : '-'}</td>
+            <td style="text-align:right;font-size:13px;${r.durExceeded ? 'color:#ef4444;font-weight:700' : ''}">${r.durSec != null ? r.durSec : '-'}</td>
             <td class="col-server ${data.isMulti ? '' : 'hidden'}" style="font-size:13px">${r.server || '-'}</td>
           </tr>`).join('');
 

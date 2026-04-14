@@ -70,7 +70,7 @@ def _strip_internal(result):
     return {k: v for k, v in result.items() if not k.startswith('_')}
 
 
-def _cache_internal(result):
+def _cache_internal(result, params=None):
     """단일 서버 분석 결과의 내부 데이터를 캐시에 저장."""
     _last_result_cache['sessions'] = result.get('_sessions')
     _last_result_cache['dropout_201'] = result.get('_dropout_201')
@@ -78,9 +78,16 @@ def _cache_internal(result):
     _last_result_cache['ip_counts'] = result.get('_ip_counts')
     _last_result_cache['ip_times'] = result.get('_ip_times')
     _last_result_cache['ip_to_tids'] = result.get('_ip_to_tids')
+    _last_result_cache['server_prefix_map'] = {}
+    if params:
+        _last_result_cache['analysis_params'] = {
+            'pj': params.get('pj', ''),
+            'seg': params.get('seg', ''),
+            'timeout_sec': params.get('timeout_sec', 20),
+        }
 
 
-def _cache_multi_internal(labeled_results):
+def _cache_multi_internal(labeled_results, params=None):
     """멀티서버 분석 결과를 서버 인덱스 prefix로 구분하여 캐시에 저장.
     session key: (sid, aid, tid) → ('N:sid', aid, tid) 형태로 prefix.
     trace_ip에서 tid_k(=key[2])만 표시에 사용하므로 sid prefix는 투명함.
@@ -131,6 +138,12 @@ def _cache_multi_internal(labeled_results):
     _last_result_cache['server_prefix_map'] = {
         f'{idx}:': label for idx, (label, _) in enumerate(labeled_results)
     }
+    if params:
+        _last_result_cache['analysis_params'] = {
+            'pj': params.get('pj', ''),
+            'seg': params.get('seg', ''),
+            'timeout_sec': params.get('timeout_sec', 20),
+        }
 
 
 def merge_results(labeled_results):
@@ -363,7 +376,7 @@ def analyze_by_path(request):
     elapsed = round(time.time() - start_time, 1)
 
     # 내부 데이터 캐시 (사용자추적 API용)
-    _cache_internal(result)
+    _cache_internal(result, params)
 
     # 응답 데이터 준비
     response_data = _strip_internal(result)
@@ -561,6 +574,8 @@ def timeline(request):
     dropout_201       = _last_result_cache.get('dropout_201') or set()
     dropout_200       = _last_result_cache.get('dropout_200') or set()
     server_prefix_map = _last_result_cache.get('server_prefix_map') or {}
+    ap = _last_result_cache.get('analysis_params') or {}
+    timeout_sec = float(ap.get('timeout_sec', 20))
 
     rows = []
     for t, s in sessions.items():
@@ -587,6 +602,7 @@ def timeline(request):
             '5101' if has_5101 else ('5002' if has_5002 else '-'))
         wait_sec = round(we - st, 1) if (has_5002 and st and we) else 0
         dur_sec  = round(done_t - st, 1) if (has_5004 and st and done_t) else None
+        dur_exceeded = (dur_sec is not None and dur_sec > timeout_sec)
 
         server = ''
         for prefix, srv_label in server_prefix_map.items():
@@ -595,16 +611,17 @@ def timeline(request):
                 break
 
         rows.append({
-            'start':   start_str,
-            'tid':     tid_k,
-            'ip':      s[0],
-            'entry':   entry,
-            'status':  status,
-            'end':     epoch_to_str(we) if we else '',
-            'done':    epoch_to_str(done_t) if (has_5004 and done_t) else '',
-            'waitSec': wait_sec,
-            'durSec':  dur_sec,
-            'server':  server,
+            'start':       start_str,
+            'tid':         tid_k,
+            'ip':          s[0],
+            'entry':       entry,
+            'status':      status,
+            'end':         epoch_to_str(we) if we else '',
+            'done':        epoch_to_str(done_t) if (has_5004 and done_t) else '',
+            'waitSec':     wait_sec,
+            'durSec':      dur_sec,
+            'durExceeded': dur_exceeded,
+            'server':      server,
         })
 
     rows.sort(key=lambda x: x['start'])
@@ -615,6 +632,11 @@ def timeline(request):
         'limit':   limit,
         'isMulti': bool(server_prefix_map),
         'rows':    rows[offset:offset + limit],
+        'analysisParams': {
+            'pj':         ap.get('pj', ''),
+            'seg':        ap.get('seg', ''),
+            'timeoutSec': timeout_sec,
+        },
     })
 
 
@@ -640,7 +662,7 @@ def analyze(request):
         timeout_sec=params['timeout_sec'],
     )
 
-    _cache_internal(result)
+    _cache_internal(result, params)
     response_data = _strip_internal(result)
     _limit_result(response_data)
     return JsonResponse({'data': response_data})
@@ -788,7 +810,7 @@ def analyze_multi(request):
         combined = labeled_results[0][1]
 
     # trace_ip용 캐시 저장 (멀티서버 prefix 적용)
-    _cache_multi_internal(labeled_results)
+    _cache_multi_internal(labeled_results, params)
 
     def prepare(result, label=None):
         rd = _strip_internal(result)
