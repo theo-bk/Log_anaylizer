@@ -79,7 +79,9 @@ def _cache_internal(result, params=None):
     _last_result_cache['ip_times'] = result.get('_ip_times')
     _last_result_cache['ip_to_tids'] = result.get('_ip_to_tids')
     _last_result_cache['server_prefix_map'] = {}
-    _last_result_cache['req_per_sec'] = result.get('_raw', {}).get('req_per_sec') or {}
+    _last_result_cache['req_per_sec']       = result.get('_raw', {}).get('req_per_sec') or {}
+    _last_result_cache['session_ip_5101']   = result.get('_session_ip_5101') or {}
+    _last_result_cache['session_ip_5004']   = result.get('_session_ip_5004') or {}
     if params:
         _last_result_cache['analysis_params'] = {
             'pj': params.get('pj', ''),
@@ -146,6 +148,18 @@ def _cache_multi_internal(labeled_results, params=None):
         for sec, cnt in (result.get('_raw', {}).get('req_per_sec') or {}).items():
             merged_rps[sec] += cnt
     _last_result_cache['req_per_sec'] = dict(merged_rps)
+
+    # IP(5101)/IP(5004) 병합 (prefix 적용)
+    merged_ip5101  = {}
+    merged_ip5004  = {}
+    for idx, (label, result) in enumerate(labeled_results):
+        prefix = f'{idx}:'
+        for key, ip in (result.get('_session_ip_5101') or {}).items():
+            merged_ip5101[(prefix + key[0], key[1], key[2])] = ip
+        for key, ip in (result.get('_session_ip_5004') or {}).items():
+            merged_ip5004[(prefix + key[0], key[1], key[2])] = ip
+    _last_result_cache['session_ip_5101']  = merged_ip5101
+    _last_result_cache['session_ip_5004']  = merged_ip5004
     if params:
         _last_result_cache['analysis_params'] = {
             'pj': params.get('pj', ''),
@@ -417,7 +431,7 @@ def range_by_path(request):
     first_ts = None
     last_ts = None
 
-    from .parser import parse_timestamp, _SID_RE, _AID_RE, to_iso
+    from .parser import _parse_epoch, _SID_RE, _AID_RE, to_iso  # timegm 기반, 서버 로컬 tz 무관
 
     sids = set()
     aids = set()
@@ -427,9 +441,9 @@ def range_by_path(request):
         for i, line in enumerate(fh):
             if i >= 200_000:
                 break
-            dt = parse_timestamp(line)
-            if dt:
-                sec = int(dt.timestamp()) + tz_adjust
+            sec = _parse_epoch(line)
+            if sec is not None:
+                sec += tz_adjust
                 if first_ts is None or sec < first_ts:
                     first_ts = sec
                 if last_ts is None or sec > last_ts:
@@ -449,9 +463,9 @@ def range_by_path(request):
         tail_bytes = fh.read()
     tail_text = tail_bytes.decode('utf-8', errors='replace')
     for line in tail_text.split('\n')[-100:]:
-        dt = parse_timestamp(line)
-        if dt:
-            sec = int(dt.timestamp()) + tz_adjust
+        sec = _parse_epoch(line)
+        if sec is not None:
+            sec += tz_adjust
             if first_ts is None or sec < first_ts:
                 first_ts = sec
             if last_ts is None or sec > last_ts:
@@ -588,11 +602,15 @@ def timeline(request):
     except ValueError:
         offset, limit = 0, 500
 
-    sort_by = request.GET.get('sort', 'time')   # 'time' | 'burst'
+    sort_by = request.GET.get('sort', 'time')   # 'time' | 'dur_asc' | 'dur_desc'
+    max_dur_sec_raw = request.GET.get('maxDurSec', '').strip()
+    max_dur_sec = float(max_dur_sec_raw) if max_dur_sec_raw else None
     dropout_201       = _last_result_cache.get('dropout_201') or set()
     dropout_200       = _last_result_cache.get('dropout_200') or set()
     server_prefix_map = _last_result_cache.get('server_prefix_map') or {}
     req_per_sec       = _last_result_cache.get('req_per_sec') or {}
+    ip_5101_map       = _last_result_cache.get('session_ip_5101') or {}
+    ip_5004_map       = _last_result_cache.get('session_ip_5004') or {}
     ap = _last_result_cache.get('analysis_params') or {}
     timeout_sec = float(ap.get('timeout_sec', 20))
 
@@ -622,7 +640,13 @@ def timeline(request):
         wait_sec = round(we - st, 1) if (has_5002 and st and we) else 0
         dur_sec  = round(done_t - st, 1) if (has_5004 and st and done_t) else None
         dur_exceeded = (dur_sec is not None and dur_sec > timeout_sec)
+        if max_dur_sec is not None and dur_sec is not None and dur_sec > max_dur_sec:
+            continue
         burst = req_per_sec.get(st, 0) if st else 0
+
+        # IP(5101) / IP(5004) 분리
+        ip5101 = ip_5101_map.get(t, s[0])
+        ip5004 = ip_5004_map.get(t, '')
 
         server = ''
         for prefix, srv_label in server_prefix_map.items():
@@ -634,6 +658,8 @@ def timeline(request):
             'start':       start_str,
             'tid':         tid_k,
             'ip':          s[0],
+            'ip5101':      ip5101,
+            'ip5004':      ip5004,
             'entry':       entry,
             'status':      status,
             'end':         epoch_to_str(we) if we else '',
@@ -645,8 +671,10 @@ def timeline(request):
             'server':      server,
         })
 
-    if sort_by == 'burst':
-        rows.sort(key=lambda x: (-x['burst'], x['start']))
+    if sort_by == 'dur_asc':
+        rows.sort(key=lambda x: (x['durSec'] is None, x['durSec'] or 0, x['start']))
+    elif sort_by == 'dur_desc':
+        rows.sort(key=lambda x: (x['durSec'] is None, -(x['durSec'] or 0), x['start']))
     else:
         rows.sort(key=lambda x: x['start'])
     total = len(rows)

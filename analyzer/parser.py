@@ -76,7 +76,7 @@ def parse_core_fields(parts):
     return tid, int(status_str), proj_seg
 
 
-# ---- Opcode / sid / aid ----
+# ---- Opcode / sid / aid / JS timestamp ----
 _OPCODE_RE = re.compile(r'opcode=(\d+)')
 _SID_RE    = re.compile(r'sid=([^&\s"]+)')
 _AID_RE    = re.compile(r'aid=([^&\s"]+)')
@@ -138,9 +138,9 @@ def compute_range(lines_iter, max_field_scan=200_000, log_tz='UTC'):
     field_scanned = 0
     for raw_line in lines_iter:
         line = raw_line.rstrip('\r\n') if isinstance(raw_line, str) else raw_line.decode('utf-8', errors='replace').rstrip('\r\n')
-        dt = parse_timestamp(line)
-        if dt is not None:
-            sec = int(dt.timestamp()) + tz_adjust
+        sec = _parse_epoch(line)  # timegm() 기반 — 서버 로컬 timezone 무관
+        if sec is not None:
+            sec += tz_adjust
             if first_ts is None or sec < first_ts:
                 first_ts = sec
             if last_ts is None or sec > last_ts:
@@ -192,6 +192,9 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
     wait_user_tids = set()
     entry_success_tids = set()
     entry_ips = set()
+
+    session_ip_5101  = {}   # session_key → 5101 요청 IP
+    session_ip_5004  = {}   # session_key → 5004 요청 IP
 
     gaps_5002 = []
     req_per_sec = defaultdict(int)  # second_epoch → 요청 수 (5101/5002, JS timestamp 단위 집계용)
@@ -302,6 +305,9 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
             if sess[2] == 0 or tsec < sess[2]:
                 sess[2] = tsec
             sess[4] = tsec
+            # 최초 5101의 IP 기록
+            if session_key not in session_ip_5101:
+                session_ip_5101[session_key] = client_ip
 
         elif opcode == 5002:
             if status_code not in (200, 201):
@@ -330,6 +336,7 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
             sess[1] |= 4  # has_5004
             tids_with_5004.add(session_key)
             sess[4] = tsec  # 5004 완료 시각 기록
+            session_ip_5004[session_key] = client_ip
 
         # 시간대별 트래픽 집계 (분 단위 버킷)
         minute = (tsec // 60) * 60
@@ -565,4 +572,6 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
         '_ip_counts': dict(ip_counts),
         '_ip_times': ip_times,
         '_ip_to_tids': dict(ip_to_tids_map),
+        '_session_ip_5101':  session_ip_5101,
+        '_session_ip_5004':  session_ip_5004,
     }

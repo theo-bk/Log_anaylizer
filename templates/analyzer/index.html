@@ -632,10 +632,10 @@
                             <label>로그 타임존</label>
                             <div style="display:flex;gap:20px;margin-top:6px">
                                 <label style="display:flex;gap:6px;align-items:center;font-size:15px;color:#111827">
-                                    <input type="radio" name="logTz" value="UTC" /> UTC
+                                    <input type="radio" name="logTz" value="UTC" checked/> UTC
                                 </label>
                                 <label style="display:flex;gap:6px;align-items:center;font-size:15px;color:#111827">
-                                    <input type="radio" name="logTz" value="KST" checked /> KST (UTC+9)
+                                    <input type="radio" name="logTz" value="KST"  /> KST (UTC+9)
                                 </label>
                             </div>
                             <div class="subtle">로그 파일에 기록된 시각 기준</div>
@@ -924,10 +924,12 @@
             <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;margin-bottom:4px">
                 <div><label>시작 시간</label><br /><input id="tl-from" type="datetime-local" step="1" style="width:200px" /></div>
                 <div><label>종료 시간</label><br /><input id="tl-to" type="datetime-local" step="1" style="width:200px" /></div>
+                <div><label>최대 처리시간(초)</label><br /><input id="tlMaxDurSec" type="number" min="0" step="1" placeholder="제한 없음" style="width:140px" /></div>
                 <button id="tlFilterBtn" class="ghost">조회</button>
                 <button id="tlResetBtn" class="ghost">전체</button>
-                <button id="tlSortTimeBtn" class="ghost" title="키 발급 시각 순 정렬">시각 순</button>
-                <button id="tlSortBurstBtn" class="ghost" title="같은 초(1초)에 요청이 집중된 순서로 정렬">집중 순 ↓</button>
+                <button id="tlSortTimeBtn"    class="ghost" title="키 발급 시각 순">시각 순</button>
+                <button id="tlSortDurAscBtn"  class="ghost" title="처리시간 짧은 순">처리시간 ↑</button>
+                <button id="tlSortDurDescBtn" class="ghost" title="처리시간 긴 순">처리시간 ↓</button>
                 <button id="tlCsvBtn" class="ghost">CSV 다운로드</button>
                 <span class="subtle" id="tlHint"></span>
             </div>
@@ -935,21 +937,18 @@
                 <table class="table" id="tlTable">
                     <thead>
                         <tr>
-                            <th>IP</th>
+                            <th>IP (5101)</th>
+                            <th>IP (5004)</th>
                             <th>TID</th>
                             <th style="white-space:nowrap">키발급 시각</th>
-                            <th>진입유형</th>
-                            <th>상태</th>
-                            <th style="white-space:nowrap">대기종료 시각</th>
                             <th style="white-space:nowrap">키반납 시각</th>
-                            <th>대기(초)</th>
-                            <th>처리(초)</th>
-                            <th title="같은 1초 안에 발생한 요청 수 (JS timestamp 기준)">동시요청</th>
+                            <th title="5101→5004 경과시간(초)">처리시간(초)</th>
+                            <th>상태</th>
                             <th class="col-server hidden">서버</th>
                         </tr>
                     </thead>
                     <tbody id="tlBody">
-                        <tr><td colspan="10" style="text-align:center;padding:32px;color:#9ca3af">조회 버튼을 눌러 데이터를 로드하세요.</td></tr>
+                        <tr><td colspan="8" style="text-align:center;padding:32px;color:#9ca3af">조회 버튼을 눌러 데이터를 로드하세요.</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -996,7 +995,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
-    <script src="{% static 'analyzer/app.js' %}?v=18"></script>
+    <script src="{% static 'analyzer/app.js' %}?v=21"></script>
 </body>
 
 </html>

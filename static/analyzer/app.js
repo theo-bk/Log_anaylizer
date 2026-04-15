@@ -1100,22 +1100,24 @@
   const ENTRY_LABEL = { '5101': '즉시진입', '5002': '대기진입', '5101+5002': '대기+즉시', '-': '-' };
   const TL_STATUS_CLASS = { '완료': 'status-done', '대기이탈': 'status-wait-out', '진입이탈': 'status-enter-out', '진행중': 'status-ongoing' };
   let tlAllRows = [];  // CSV용 현재 페이지 rows
-  let tlSort = 'time'; // 'time' | 'burst'
+  let tlSort = 'time'; // 'time' | 'dur_asc' | 'dur_desc'
 
   async function doTimeline(offset = 0) {
     if (!lastResult) return;
     const hint  = document.getElementById('tlHint');
     const tbody = document.getElementById('tlBody');
     if (hint)  hint.textContent = '조회 중...';
-    if (tbody) tbody.innerHTML  = `<tr><td colspan="11" style="text-align:center;padding:32px;color:#9ca3af">로딩 중...</td></tr>`;
+    if (tbody) tbody.innerHTML  = `<tr><td colspan="8" style="text-align:center;padding:32px;color:#9ca3af">로딩 중...</td></tr>`;
     const paramsBarLoading = document.getElementById('tlParamsBar');
     if (paramsBarLoading) paramsBarLoading.textContent = '';
 
     const fromVal = document.getElementById('tl-from')?.value;
     const toVal   = document.getElementById('tl-to')?.value;
+    const maxDurSec = document.getElementById('tlMaxDurSec')?.value?.trim();
     let url = `/api/timeline/?offset=${offset}&limit=${TL_LIMIT}&sort=${tlSort}`;
-    if (fromVal) url += `&from=${encodeURIComponent(fromVal.replace('T', ' '))}`;
-    if (toVal)   url += `&to=${encodeURIComponent(toVal.replace('T', ' '))}`;
+    if (fromVal)   url += `&from=${encodeURIComponent(fromVal.replace('T', ' '))}`;
+    if (toVal)     url += `&to=${encodeURIComponent(toVal.replace('T', ' '))}`;
+    if (maxDurSec) url += `&maxDurSec=${encodeURIComponent(maxDurSec)}`;
 
     try {
       const resp = await fetch(url);
@@ -1141,33 +1143,20 @@
       document.querySelectorAll('#tlTable .col-server').forEach(el =>
         el.classList.toggle('hidden', !data.isMulti));
 
-      // 집중 순 정렬일 때 최대 burst 값 (배경 강조 기준)
-      const maxBurst = tlSort === 'burst' && data.rows.length
-        ? Math.max(...data.rows.map(r => r.burst || 0)) : 0;
-
       if (!data.rows.length) {
-        if (tbody) tbody.innerHTML = `<tr><td colspan="11" style="text-align:center;padding:32px;color:#9ca3af">해당 시간대 데이터 없음</td></tr>`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;padding:32px;color:#9ca3af">해당 시간대 데이터 없음</td></tr>`;
       } else {
         if (tbody) tbody.innerHTML = data.rows.map(r => {
-          const burst = r.burst || 0;
-          // 동시요청 수 배경: 최대값 대비 비율로 열강도 표시
-          const burstRatio = maxBurst > 1 ? burst / maxBurst : 0;
-          const burstBg = burstRatio > 0.7 ? 'background:#fee2e2;color:#b91c1c;font-weight:700'
-                        : burstRatio > 0.4 ? 'background:#ffedd5;color:#c2410c;font-weight:600'
-                        : burstRatio > 0.1 ? 'background:#fef9c3;color:#854d0e'
-                        : 'color:#6b7280';
+          const traceIp = r.ip5101 || r.ip || '';
           return `
           <tr>
-            <td><a href="#" class="tl-ip-link" data-ip="${r.ip}" style="color:#4f46e5;text-decoration:none;font-size:13px">${r.ip}</a></td>
+            <td><a href="#" class="tl-ip-link" data-ip="${traceIp}" style="color:#4f46e5;text-decoration:none;font-size:13px">${r.ip5101 || '-'}</a></td>
+            <td style="font-size:13px">${r.ip5004 || '-'}</td>
             <td><span class="mono" style="font-size:13px">${r.tid}</span></td>
-            <td style="white-space:nowrap;font-size:13px">${r.start}</td>
-            <td><span class="entry-type">${ENTRY_LABEL[r.entry] || r.entry}</span></td>
-            <td><span class="status-badge ${TL_STATUS_CLASS[r.status] || ''}">${r.status}</span></td>
-            <td style="white-space:nowrap;font-size:13px">${r.end || '-'}</td>
+            <td style="white-space:nowrap;font-size:13px">${r.start || '-'}</td>
             <td style="white-space:nowrap;font-size:13px">${r.done || '-'}</td>
-            <td style="text-align:right;font-size:13px">${r.waitSec || '-'}</td>
             <td style="text-align:right;font-size:13px;${r.durExceeded ? 'color:#ef4444;font-weight:700' : ''}">${r.durSec != null ? r.durSec : '-'}</td>
-            <td style="text-align:right;font-size:13px;${burstBg}">${burst}</td>
+            <td><span class="status-badge ${TL_STATUS_CLASS[r.status] || ''}">${r.status}</span></td>
             <td class="col-server ${data.isMulti ? '' : 'hidden'}" style="font-size:13px">${r.server || '-'}</td>
           </tr>`;
         }).join('');
@@ -1217,31 +1206,40 @@
   }
 
   function updateTlSortButtons() {
-    const btnTime  = document.getElementById('tlSortTimeBtn');
-    const btnBurst = document.getElementById('tlSortBurstBtn');
-    if (btnTime)  btnTime.style.background  = tlSort === 'time'  ? '#4f46e5' : '';
-    if (btnTime)  btnTime.style.color       = tlSort === 'time'  ? '#fff'    : '';
-    if (btnBurst) btnBurst.style.background = tlSort === 'burst' ? '#4f46e5' : '';
-    if (btnBurst) btnBurst.style.color      = tlSort === 'burst' ? '#fff'    : '';
+    const btnMap = {
+      'tlSortTimeBtn':    'time',
+      'tlSortDurAscBtn':  'dur_asc',
+      'tlSortDurDescBtn': 'dur_desc',
+    };
+    Object.entries(btnMap).forEach(([id, val]) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.style.background = tlSort === val ? '#4f46e5' : '';
+      btn.style.color      = tlSort === val ? '#fff'    : '';
+    });
   }
 
   document.getElementById('tlFilterBtn')?.addEventListener('click', () => doTimeline(0));
   document.getElementById('tlResetBtn')?.addEventListener('click', () => {
     const f = document.getElementById('tl-from');
     const t = document.getElementById('tl-to');
-    if (f) f.value = ''; if (t) t.value = '';
+    const m = document.getElementById('tlMaxDurSec');
+    if (f) f.value = ''; if (t) t.value = ''; if (m) m.value = '';
     doTimeline(0);
   });
   document.getElementById('tlSortTimeBtn')?.addEventListener('click', () => {
     tlSort = 'time'; updateTlSortButtons(); doTimeline(0);
   });
-  document.getElementById('tlSortBurstBtn')?.addEventListener('click', () => {
-    tlSort = 'burst'; updateTlSortButtons(); doTimeline(0);
+  document.getElementById('tlSortDurAscBtn')?.addEventListener('click', () => {
+    tlSort = 'dur_asc'; updateTlSortButtons(); doTimeline(0);
+  });
+  document.getElementById('tlSortDurDescBtn')?.addEventListener('click', () => {
+    tlSort = 'dur_desc'; updateTlSortButtons(); doTimeline(0);
   });
   document.getElementById('tlCsvBtn')?.addEventListener('click', () => {
     if (!tlAllRows.length) { alert('데이터 없음'); return; }
     downloadCSV('timeline.csv', tlAllRows,
-      ['start','tid','ip','entry','status','end','done','waitSec','durSec','burst','server']);
+      ['ip5101','ip5004','tid','start','done','durSec','status','server']);
   });
 
   // ====== 대시보드 시간 필터 ======
