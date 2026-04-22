@@ -875,14 +875,21 @@
     const isMultiDay = ts.some(t => t.time.slice(0, 10) !== firstDay);
     const labels = ts.map(t => isMultiDay ? t.time.slice(5, 16) : t.time.slice(11, 16));
 
+    // 완료율(%) 계산
+    const completionRates = ts.map(t => {
+      if (t.req === 0) return 0;
+      return (t.done / t.req * 100);
+    });
+
     chartInstances['chart-timeseries'] = new Chart(el.getContext('2d'), {
       type: 'line',
       data: {
         labels,
         datasets: [
-          { label: '요청 수',    data: ts.map(t => t.req),  borderColor: '#818cf8', backgroundColor: 'rgba(129,140,248,.12)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
-          { label: '대기 발생',  data: ts.map(t => t.wait), borderColor: '#fb923c', backgroundColor: 'rgba(251,146,60,.10)',  fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
-          { label: '완료(5004)', data: ts.map(t => t.done), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.10)',  fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 },
+          { label: '요청 수',    data: ts.map(t => t.req),  borderColor: '#818cf8', backgroundColor: 'rgba(129,140,248,.12)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
+          { label: '대기 발생',  data: ts.map(t => t.wait), borderColor: '#fb923c', backgroundColor: 'rgba(251,146,60,.10)',  fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
+          { label: '완료(5004)', data: ts.map(t => t.done), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.10)',  fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
+          { label: '완료율(%)',  data: completionRates, borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,.08)', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2.5, yAxisID: 'y1', borderDash: [5, 5] },
         ]
       },
       options: {
@@ -890,11 +897,21 @@
         interaction: { mode: 'index', intersect: false },
         plugins: {
           legend: { position: 'top', labels: { font: { size: 14 }, padding: 14, boxWidth: 24 } },
-          tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}` } }
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                if (ctx.dataset.label === '완료율(%)') {
+                  return `${ctx.dataset.label}: ${ctx.raw.toFixed(1)}%`;
+                }
+                return `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}`;
+              }
+            }
+          }
         },
         scales: {
           x: { grid: { color: '#f3f4f6' }, ticks: { maxTicksLimit: 12, font: { size: 12 }, color: '#6b7280', maxRotation: 45, minRotation: 0 } },
-          y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 13 } } }
+          y: { beginAtZero: true, grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 13 } }, position: 'left' },
+          y1: { beginAtZero: true, max: 100, grid: { drawOnChartArea: false }, ticks: { precision: 0, font: { size: 13 }, callback: v => `${v}%` }, position: 'right' }
         }
       }
     });
