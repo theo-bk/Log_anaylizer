@@ -875,10 +875,12 @@
     const isMultiDay = ts.some(t => t.time.slice(0, 10) !== firstDay);
     const labels = ts.map(t => isMultiDay ? t.time.slice(5, 16) : t.time.slice(11, 16));
 
-    // 완료율(%) 계산
+    // 완료율(%) 계산 — NF4 공식: complete_succ / chk_enter_succ * 100
+    // chk_enter_succ(진입 성공) = req(200+201) - wait(201) = 진입 성공(200)만
     const completionRates = ts.map(t => {
-      if (t.req === 0) return 0;
-      return (t.done / t.req * 100);
+      const enterSucc = t.req - t.wait;
+      if (enterSucc <= 0) return 0;
+      return Math.min(100, t.done / enterSucc * 100);
     });
 
     chartInstances['chart-timeseries'] = new Chart(el.getContext('2d'), {
@@ -889,7 +891,7 @@
           { label: '요청 수',    data: ts.map(t => t.req),  borderColor: '#818cf8', backgroundColor: 'rgba(129,140,248,.12)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
           { label: '대기 발생',  data: ts.map(t => t.wait), borderColor: '#fb923c', backgroundColor: 'rgba(251,146,60,.10)',  fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
           { label: '완료(5004)', data: ts.map(t => t.done), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.10)',  fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
-          { label: '완료율(%)',  data: completionRates, borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,.08)', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2.5, yAxisID: 'y1', borderDash: [5, 5] },
+          { label: '완료율(%)',  data: completionRates, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.08)', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2.5, yAxisID: 'y1', borderDash: [5, 5] },
         ]
       },
       options: {
