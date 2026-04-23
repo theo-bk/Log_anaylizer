@@ -754,48 +754,105 @@ def get_range(request):
 def dashboard_filter(request):
     """
     GET /api/dashboard_filter/?from=YYYY-MM-DD HH:MM:SS&to=YYYY-MM-DD HH:MM:SS
-    캐시된 세션 데이터를 시간 범위로 필터링해 IP Top 통계 반환.
+    캐시된 세션 데이터를 시간 범위로 필터링해 대시보드 데이터 재계산.
     """
     sessions = _last_result_cache.get('sessions')
     ip_to_tids = _last_result_cache.get('ip_to_tids')
-    if not sessions or not ip_to_tids:
-        return JsonResponse({'error': '먼저 로그 분석을 실행하세요.'}, status=400)
-
     dropout_201 = _last_result_cache.get('dropout_201') or set()
     dropout_200 = _last_result_cache.get('dropout_200') or set()
+
+    if not sessions or not ip_to_tids:
+        return JsonResponse({'error': '먼저 로그 분석을 실행하세요.'}, status=400)
 
     time_from = request.GET.get('from', '').strip()
     time_to = request.GET.get('to', '').strip()
 
-    from .parser import epoch_to_str
+    from .parser import epoch_to_str, to_iso
 
-    # ip -> [tid수, 대기시간합계, 대기이탈수, 진입이탈수]
+    # 시간 범위로 필터링된 세션 재집계
+    filtered_tids_5101 = set()
+    filtered_tids_5002 = set()
+    filtered_tids_5004 = set()
+    filtered_wait_tids = set()
+    filtered_entry_success = set()
+    filtered_dropout_201 = set()
+    filtered_dropout_200 = set()
+
+    filtered_durations = []
+    filtered_timeseries = defaultdict(lambda: {'req': 0, 'wait': 0, 'done': 0})
+
     ip_stats = defaultdict(lambda: [0, 0.0, 0, 0])
 
-    for ip, tid_list in ip_to_tids.items():
-        for t in tid_list:
-            s = sessions.get(t)
-            if not s:
-                continue
-            st = s[2]
-            start_str = epoch_to_str(st) if st else ''
-            if time_from and start_str and start_str < time_from:
-                continue
-            if time_to and start_str and start_str > time_to:
-                continue
+    for t, s in sessions.items():
+        st = s[2]  # 세션 시작 시간
+        start_str = epoch_to_str(st) if st else ''
 
-            flags = s[1]
-            we = s[3]
-            has_5002 = flags & 2
+        # 시간 범위 필터
+        if time_from and start_str and start_str < time_from:
+            continue
+        if time_to and start_str and start_str > time_to:
+            continue
 
+        flags = s[1]
+        we = s[3]
+        done_t = s[4]
+
+        has_5101 = flags & 1
+        has_5002 = flags & 2
+        has_5004 = flags & 4
+
+        # 지표 수집
+        if has_5101:
+            filtered_tids_5101.add(t)
+        if has_5002:
+            filtered_tids_5002.add(t)
+        if has_5004:
+            filtered_tids_5004.add(t)
+        if has_5002 and st and we:
+            filtered_wait_tids.add(t)
+        if has_5002 and st and we == st:  # 진입 성공 (200 응답)
+            filtered_entry_success.add(t)
+        if t in dropout_201:
+            filtered_dropout_201.add(t)
+        if t in dropout_200:
+            filtered_dropout_200.add(t)
+
+        # 처리시간 (timeout_sec은 원본 유지)
+        duration = (done_t - st) if (st and done_t and done_t > st) else 0
+        if duration > 0:
+            filtered_durations.append(duration)
+
+        # 시간대별 집계 (분 단위)
+        if has_5101 or has_5002:
+            minute = (st // 60) * 60 if st else 0
+            filtered_timeseries[minute]['req'] += 1
+            if has_5002 and we:
+                filtered_timeseries[minute]['wait'] += 1
+        if has_5004 and st:
+            minute = (st // 60) * 60
+            filtered_timeseries[minute]['done'] += 1
+
+        # IP 통계
+        ip = s[0] if s[0] else ''
+        if ip:
             c = ip_stats[ip]
-            c[0] += 1
+            c[0] += 1  # 요청
             if has_5002 and st and we:
-                c[1] += we - st
-            if t in dropout_201:
-                c[2] += 1
-            if t in dropout_200:
-                c[3] += 1
+                c[1] += we - st  # 대기 시간
+            if t in filtered_dropout_201:
+                c[2] += 1  # 대기 이탈
+            if t in filtered_dropout_200:
+                c[3] += 1  # 진입 이탈
+
+    # KPI 재계산
+    entry_count = len(filtered_tids_5101 | filtered_tids_5002)
+    wait_count = len(filtered_wait_tids)
+    complete_count = len(filtered_tids_5004)
+    quit_wait_count = len(filtered_dropout_201)
+    post_enter_count = len(filtered_dropout_200)
+
+    qw_rate = percent(quit_wait_count, wait_count) if wait_count > 0 else 0
+    pe_rate = percent(post_enter_count, len(filtered_entry_success)) if filtered_entry_success else 0
 
     def sort_top(idx, limit=50):
         items = [(ip, c[idx]) for ip, c in ip_stats.items() if c[idx] > 0]
@@ -803,11 +860,32 @@ def dashboard_filter(request):
         return [{'ip': ip, 'count': round(v, 1) if isinstance(v, float) else v}
                 for ip, v in items[:limit]]
 
+    # 시간대별 시리즈 정렬
+    sorted_minutes = sorted(filtered_timeseries.keys())
+    time_series = [
+        {'time': epoch_to_str(m), 'req': filtered_timeseries[m]['req'],
+         'wait': filtered_timeseries[m]['wait'], 'done': filtered_timeseries[m]['done']}
+        for m in sorted_minutes
+    ]
+
     return JsonResponse({'data': {
+        'kpis': {
+            'reqUserCnt': entry_count,
+            'waitUserCnt': wait_count,
+            'doneUserCnt': complete_count,
+            'quitWaitCnt': quit_wait_count,
+            'postEnterLeaveCnt': post_enter_count,
+            'qwRate': qw_rate,
+            'peRate': pe_rate,
+            'entrySuccessCount': len(filtered_entry_success),
+        },
         'topIssueIP': sort_top(0),
-        'topWaitIP': sort_top(1),
+        'topWaitIP': [{'ip': ip, 'count': round(c[1], 1)} for ip, c in ip_stats.items() if c[1] > 0][:50],
         'topQwIP': sort_top(2),
         'topPeIP': sort_top(3),
+        'timeSeries': time_series,
+        'durHistogram': [],
+        'codeDetails': [],
     }})
 
 
