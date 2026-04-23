@@ -412,29 +412,32 @@
     if (emptyMsg) emptyMsg.style.display = 'none';
 
     templates.forEach((tpl, idx) => {
+      const wrapper = document.createElement('div');
+      wrapper.style.cssText = 'position:relative;display:flex;flex-direction:column';
+
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'ghost';
-      btn.style.cssText = 'font-size:12px;padding:6px 10px;position:relative';
+      btn.style.cssText = 'font-size:12px;padding:8px 10px;text-align:left;flex:1;min-width:0';
 
       const date = new Date(tpl.timestamp);
       const timeStr = date.toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
       const projStr = tpl.project ? `[${tpl.project}]` : '[전체]';
 
       btn.innerHTML = `
-        <div>${projStr} ${timeStr}</div>
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${projStr} ${timeStr}</div>
         <div style="font-size:10px;color:#9ca3af">${tpl.servers?.length || 0}개 파일</div>
       `;
 
       btn.addEventListener('click', () => loadTemplate(tpl));
-      container.appendChild(btn);
+      wrapper.appendChild(btn);
 
       // 삭제 버튼
       const delBtn = document.createElement('button');
       delBtn.type = 'button';
       delBtn.className = 'ghost';
-      delBtn.style.cssText = 'font-size:10px;padding:4px 6px;color:#ef4444;position:absolute;right:0;top:0';
-      delBtn.textContent = '×';
+      delBtn.style.cssText = 'font-size:11px;padding:2px 4px;color:#ef4444;position:absolute;right:2px;top:2px;line-height:1';
+      delBtn.textContent = '✕';
       delBtn.title = '템플릿 삭제';
       delBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -443,8 +446,8 @@
         renderTemplates();
       });
 
-      btn.style.position = 'relative';
-      btn.appendChild(delBtn);
+      wrapper.appendChild(delBtn);
+      container.appendChild(wrapper);
     });
   }
 
