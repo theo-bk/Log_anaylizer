@@ -92,11 +92,18 @@
 
   // ====== 유틸 ======
   const pad2 = (n) => String(n).padStart(2, '0');
+
+  // ISO 문자열은 항상 KST(+09:00) 형식으로 반환됨 — 브라우저 로컬TZ 무관하게 직접 슬라이싱
+  // 형식: 'YYYY-MM-DDTHH:mm:ss+09:00'
   const toLocalParts = (iso) => {
-    if (!iso) return { d: '', t: '' };
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return { d: '', t: '' };
-    return { d: `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`, t: `${pad2(d.getHours())}:${pad2(d.getMinutes())}` };
+    if (!iso || iso.length < 16) return { d: '', t: '' };
+    return { d: iso.slice(0, 10), t: iso.slice(11, 16) };
+  };
+
+  // KST 시간범위 표시용 포맷: 'YYYY-MM-DD HH:mm:ss (KST)'
+  const isoToKstDisplay = (iso) => {
+    if (!iso || iso.length < 19) return '-';
+    return iso.slice(0, 10) + ' ' + iso.slice(11, 19) + ' (KST)';
   };
   const setProgress = (p, extra) => {
     if ($progressSection?.classList.contains('hidden')) $progressSection.classList.remove('hidden');
@@ -117,15 +124,16 @@
     if ($timeStart && a.t) $timeStart.value = a.t;
     if ($dateEnd && b.d) $dateEnd.value = b.d;
     if ($timeEnd && b.t) $timeEnd.value = b.t;
-    if ($rangeStart) $rangeStart.textContent = d.startISO || '-';
-    if ($rangeEnd)   $rangeEnd.textContent   = d.endISO   || '-';
+    if ($rangeStart) $rangeStart.textContent = isoToKstDisplay(d.startISO);
+    if ($rangeEnd)   $rangeEnd.textContent   = isoToKstDisplay(d.endISO);
     if ($fileInfo && d.fileSizeMB != null) $fileInfo.textContent = `(총 ${d.fileSizeMB} MB)`;
   };
   const toEpochFromInputs = () => {
     const ds = $dateStart?.value, ts = $timeStart?.value;
     const de = $dateEnd?.value,   te = $timeEnd?.value;
-    const s = (ds && ts) ? new Date(`${ds}T${ts}:00`) : null;
-    const e = (de && te) ? new Date(`${de}T${te}:00`) : null;
+    // 입력값은 KST 시간 — +09:00 명시로 브라우저 로컬TZ 영향 차단
+    const s = (ds && ts) ? new Date(`${ds}T${ts}:00+09:00`) : null;
+    const e = (de && te) ? new Date(`${de}T${te}:00+09:00`) : null;
     return {
       startSec: s && !isNaN(s.getTime()) ? Math.floor(s.getTime() / 1000) : undefined,
       endSec:   e && !isNaN(e.getTime()) ? Math.floor(e.getTime() / 1000) : undefined,
@@ -343,7 +351,7 @@
 
   // ====== 로그 타임존 ======
   function getLogTz() {
-    return document.querySelector('input[name="logTz"]:checked')?.value || 'KST';
+    return 'KST';
   }
 
   // ====== 분석 공통 파라미터 ======
@@ -434,8 +442,13 @@
     lastResult  = data;
     lastServers = data.servers || [];
 
-    autoFillTimeFilters();                           // ① 분석 시간범위 먼저 복사 (덮어쓰이기 전에)
-    if (data.range) setDetectedRange(data.range);   // ② 그 후 파일 전체 범위로 입력 업데이트
+    autoFillTimeFilters();
+    // 분석 완료 후: 파일 전체 범위 표시만 갱신 — 사용자가 설정한 시간 범위 입력값은 유지
+    if (data.range) {
+      if ($rangeStart) $rangeStart.textContent = isoToKstDisplay(data.range.startISO);
+      if ($rangeEnd)   $rangeEnd.textContent   = isoToKstDisplay(data.range.endISO);
+      if ($fileInfo && data.range.fileSizeMB != null) $fileInfo.textContent = `(총 ${data.range.fileSizeMB} MB)`;
+    }
 
     const isMulti = lastServers.length > 1;
     renderResult(data, isMulti);
@@ -891,7 +904,7 @@
           { label: '요청 수',    data: ts.map(t => t.req),  borderColor: '#818cf8', backgroundColor: 'rgba(129,140,248,.12)', fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
           { label: '대기 발생',  data: ts.map(t => t.wait), borderColor: '#fb923c', backgroundColor: 'rgba(251,146,60,.10)',  fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
           { label: '완료(5004)', data: ts.map(t => t.done), borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,.10)',  fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2, yAxisID: 'y' },
-          { label: '완료율(%)',  data: completionRates, borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,.08)', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2.5, yAxisID: 'y1', borderDash: [5, 5] },
+          { label: '완료율(%)',  data: completionRates, borderColor: '#ec4899', backgroundColor: 'rgba(236,72,153,.08)', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 2.5, yAxisID: 'y1', borderDash: [5, 5] },
         ]
       },
       options: {
