@@ -628,18 +628,6 @@
                             <div class="subtle">이 값을 초과하는 처리시간은 통계에서 제외됩니다</div>
                         </div>
 
-                        <div>
-                            <label>로그 타임존</label>
-                            <div style="display:flex;gap:20px;margin-top:6px">
-                                <label style="display:flex;gap:6px;align-items:center;font-size:15px;color:#111827">
-                                    <input type="radio" name="logTz" value="UTC" checked/> UTC
-                                </label>
-                                <label style="display:flex;gap:6px;align-items:center;font-size:15px;color:#111827">
-                                    <input type="radio" name="logTz" value="KST"  /> KST (UTC+9)
-                                </label>
-                            </div>
-                            <div class="subtle">로그 파일에 기록된 시각 기준</div>
-                        </div>
 
                         <div>
                             <label>시간 범위 (선택)</label>
@@ -659,6 +647,14 @@
                         <div class="actions">
                             <button id="analyzeBtn">결과 출력</button>
                             <button id="cancelBtn" class="ghost" disabled>취소</button>
+                            <button id="saveTemplateBtn" class="ghost" style="font-size:12px;padding:6px 10px" title="현재 설정을 템플릿으로 저장">💾 템플릿 저장</button>
+                        </div>
+
+                        <!-- 템플릿 관리 UI -->
+                        <div style="margin-top:12px;padding:12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0">
+                            <label style="font-weight:600;color:#374151">최근 템플릿</label>
+                            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap" id="templateButtons"></div>
+                            <div id="templateEmpty" class="subtle" style="margin-top:8px">저장된 템플릿이 없습니다.</div>
                         </div>
                     </div>
 

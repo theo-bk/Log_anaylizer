@@ -311,6 +311,161 @@
     });
   })();
 
+  // ====== 템플릿 관리 (localStorage) ======
+  const TEMPLATE_STORAGE_KEY = 'nf4_log_templates';
+  const MAX_TEMPLATES = 3;
+
+  function getTemplates() {
+    try {
+      const stored = localStorage.getItem(TEMPLATE_STORAGE_KEY);
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveTemplates(templates) {
+    try {
+      localStorage.setItem(TEMPLATE_STORAGE_KEY, JSON.stringify(templates));
+    } catch {
+      alert('템플릿 저장 실패 (localStorage 오류)');
+    }
+  }
+
+  function getCurrentTemplate() {
+    const servers = getServerInputs();
+    return {
+      name: `검색_${new Date().toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`,
+      timestamp: new Date().getTime(),
+      servers: servers.map(s => ({ label: s.label, path: s.path })), // 파일 경로만 저장 (파일 객체 제외)
+      project: $project?.value?.trim() || '',
+      segment: $segment?.value?.trim() || '',
+      timeoutSec: document.getElementById('timeoutSec')?.value || '20',
+      dateStart: $dateStart?.value || '',
+      timeStart: $timeStart?.value || '',
+      dateEnd: $dateEnd?.value || '',
+      timeEnd: $timeEnd?.value || '',
+      rpsEnabled: $chkRPS?.checked || false,
+      rpsMin: $rpsMin?.value || '1',
+      rpsMax: $rpsMax?.value || '10',
+      holdEnabled: $chkHold?.checked || false,
+      holdSec: $holdSec?.value || '60',
+    };
+  }
+
+  function loadTemplate(template) {
+    // 서버 목록 설정
+    const list = document.getElementById('serverList');
+    if (list && template.servers && template.servers.length > 0) {
+      list.innerHTML = '';
+      template.servers.forEach((srv, i) => {
+        const row = createServerRow(i);
+        row.querySelector('.srv-label').value = srv.label;
+        row.querySelector('.srv-path').value = srv.path;
+        list.appendChild(row);
+      });
+      refreshRemoveButtons();
+    }
+
+    // 프로젝트/세그먼트
+    if ($project && template.project) $project.value = template.project;
+    if ($segment && template.segment) $segment.value = template.segment;
+
+    // 처리시간
+    const timeoutEl = document.getElementById('timeoutSec');
+    if (timeoutEl && template.timeoutSec) timeoutEl.value = template.timeoutSec;
+
+    // 시간 범위
+    if ($dateStart && template.dateStart) $dateStart.value = template.dateStart;
+    if ($timeStart && template.timeStart) $timeStart.value = template.timeStart;
+    if ($dateEnd && template.dateEnd) $dateEnd.value = template.dateEnd;
+    if ($timeEnd && template.timeEnd) $timeEnd.value = template.timeEnd;
+
+    // RPS 옵션
+    if ($chkRPS && template.rpsEnabled !== undefined) {
+      $chkRPS.checked = template.rpsEnabled;
+      toggleRPSFields();
+      if (template.rpsMin) $rpsMin.value = template.rpsMin;
+      if (template.rpsMax) $rpsMax.value = template.rpsMax;
+    }
+
+    // Hold 옵션
+    if ($chkHold && template.holdEnabled !== undefined) {
+      $chkHold.checked = template.holdEnabled;
+      toggleHoldFields();
+      if (template.holdSec) $holdSec.value = template.holdSec;
+    }
+  }
+
+  function renderTemplates() {
+    const templates = getTemplates();
+    const container = document.getElementById('templateButtons');
+    const emptyMsg = document.getElementById('templateEmpty');
+
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (!templates.length) {
+      if (emptyMsg) emptyMsg.style.display = '';
+      return;
+    }
+    if (emptyMsg) emptyMsg.style.display = 'none';
+
+    templates.forEach((tpl, idx) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'ghost';
+      btn.style.cssText = 'font-size:12px;padding:6px 10px;position:relative';
+
+      const date = new Date(tpl.timestamp);
+      const timeStr = date.toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+      const projStr = tpl.project ? `[${tpl.project}]` : '[전체]';
+
+      btn.innerHTML = `
+        <div>${projStr} ${timeStr}</div>
+        <div style="font-size:10px;color:#9ca3af">${tpl.servers?.length || 0}개 파일</div>
+      `;
+
+      btn.addEventListener('click', () => loadTemplate(tpl));
+      container.appendChild(btn);
+
+      // 삭제 버튼
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'ghost';
+      delBtn.style.cssText = 'font-size:10px;padding:4px 6px;color:#ef4444;position:absolute;right:0;top:0';
+      delBtn.textContent = '×';
+      delBtn.title = '템플릿 삭제';
+      delBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const updatedTemplates = templates.filter((_, i) => i !== idx);
+        saveTemplates(updatedTemplates);
+        renderTemplates();
+      });
+
+      btn.style.position = 'relative';
+      btn.appendChild(delBtn);
+    });
+  }
+
+  // 템플릿 저장 버튼
+  document.getElementById('saveTemplateBtn')?.addEventListener('click', () => {
+    const templates = getTemplates();
+    const current = getCurrentTemplate();
+
+    templates.unshift(current);
+    if (templates.length > MAX_TEMPLATES) {
+      templates.pop();
+    }
+
+    saveTemplates(templates);
+    renderTemplates();
+    alert('템플릿이 저장되었습니다.');
+  });
+
+  // 초기 템플릿 렌더링
+  renderTemplates();
+
   // ====== 탭 ======
   function showTab(name) {
     document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
