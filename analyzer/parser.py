@@ -7,11 +7,15 @@ parser.py — test.py(원본 CLI) 파싱 방식 기반.
 핵심: parts[-1]=proj.seg, parts[-2]=tid, parts[-3]=nf_status
 3GB+ 파일도 스트리밍으로 처리. 성능 최적화: datetime 대신 epoch seconds 사용.
 """
-import re
 import math
 from datetime import datetime, timezone
 from collections import defaultdict
 from calendar import timegm
+
+try:
+    import regex as re  # 표준 re보다 2-10배 빠름
+except ImportError:
+    import re  # 폴백: 표준 라이브러리
 
 # ===================== Helpers =====================
 
@@ -172,6 +176,10 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
                  progress_callback=None):
     tz_adjust = -32400 if log_tz == 'KST' else 0
     target_proj_seg = f'{pj}.{seg}' if pj and seg and not seg_all else None
+
+    # 성능 최적화: 자주 사용하는 변수를 로컬에 캐시
+    has_target_pj = bool(pj)
+    has_time_filter = start_sec is not None or end_sec is not None
 
     TTL_MIN = max(0, rps_min) if rps_enabled else 1
     TTL_MAX = max(TTL_MIN, rps_max) if rps_enabled else 10

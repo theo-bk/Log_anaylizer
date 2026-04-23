@@ -3,6 +3,8 @@ import json
 import os
 import time
 from collections import defaultdict
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+import multiprocessing as mp
 
 from django.http import JsonResponse, HttpResponse, StreamingHttpResponse
 from django.shortcuts import render
@@ -10,6 +12,20 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
 from .parser import analyze_file, compute_range, stat, percent, to_iso, epoch_to_str
+
+# 병렬 처리 스레드 풀 (Django는 멀티스레딩 친화적)
+_executor = ThreadPoolExecutor(max_workers=4)
+
+# JSON 인코딩 최적화
+try:
+    import orjson
+    def json_response(data, **kwargs):
+        """orjson 기반 고속 JSON 응답 (표준 JsonResponse보다 5-10배 빠름)"""
+        content = orjson.dumps(data)
+        return HttpResponse(content, content_type='application/json')
+except ImportError:
+    # orjson 미설치 시 표준 JsonResponse 사용
+    json_response = JsonResponse
 
 
 # ===== 분석 결과 캐시 (사용자추적 on-demand 조회용) =====
