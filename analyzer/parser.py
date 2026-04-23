@@ -8,9 +8,12 @@ parser.py — test.py(원본 CLI) 파싱 방식 기반.
 3GB+ 파일도 스트리밍으로 처리. 성능 최적화: datetime 대신 epoch seconds 사용.
 """
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 from calendar import timegm
+
+# NF4 통계로그와 동일하게 KST(UTC+9) 고정
+_KST = timezone(timedelta(hours=9))
 
 try:
     import regex as re  # 표준 re보다 2-10배 빠름
@@ -26,9 +29,10 @@ _MONTHS = {
 
 
 def to_iso(sec):
+    """epoch seconds → ISO 8601 문자열 (KST, +09:00). NF4 통계로그 기준과 동일."""
     if sec is None or not isinstance(sec, (int, float)) or not math.isfinite(sec):
         return ''
-    return datetime.fromtimestamp(sec, tz=timezone.utc).isoformat()
+    return datetime.fromtimestamp(sec, tz=_KST).isoformat()
 
 
 def epoch_to_str(sec):
@@ -209,6 +213,9 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
     ts_req  = defaultdict(int)   # minute_epoch → 요청 수 (5101/5002 200·201)
     ts_wait = defaultdict(int)   # minute_epoch → 대기 수 (5002 201)
     ts_done = defaultdict(int)   # minute_epoch → 완료 수 (5004)
+    # NF4 wait_tm/wait_user 대응: 분 단위 대기시간 합계·건수 (세션 처리 후 집계)
+    ts_wait_tm_sum = defaultdict(float)  # minute_epoch → 대기시간 합계(초)
+    ts_wait_tm_cnt = defaultdict(int)    # minute_epoch → 대기시간 집계 건수
 
     code_cnt = defaultdict(int)
     code_map = defaultdict(list)
@@ -425,6 +432,10 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
 
         if has_wait:
             (returned_wait_times if has_5004 else dropped_wait_times).append(wait_secs)
+            # NF4 wait_tm 대응: 대기가 시작된 분 버킷에 대기시간 누적
+            minute = (st // 60) * 60
+            ts_wait_tm_sum[minute] += wait_secs
+            ts_wait_tm_cnt[minute] += 1
 
         # 세션 전체 처리시간: start_sec → last_req_sec(5004 포함)
         last = s[4]
@@ -495,10 +506,17 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
     top_wait_tids_list.sort(key=lambda x: x['wait_secs'], reverse=True)
     top_wait_tids = top_wait_tids_list[:5]
 
-    # 시간대별 시리즈
+    # 시간대별 시리즈 — NF4 wait_user/wait_tm 대응 필드 포함
     _all_min = sorted(set(ts_req) | set(ts_wait) | set(ts_done))
     time_series = [
-        {'time': epoch_to_str(m), 'req': ts_req.get(m, 0), 'wait': ts_wait.get(m, 0), 'done': ts_done.get(m, 0)}
+        {
+            'time': epoch_to_str(m),
+            'req':  ts_req.get(m, 0),
+            'wait': ts_wait.get(m, 0),
+            'done': ts_done.get(m, 0),
+            # 분 단위 평균 대기시간(초) — NF4 wait_tm / wait_user 대응
+            'waitTmAvg': round(ts_wait_tm_sum[m] / ts_wait_tm_cnt[m], 1) if ts_wait_tm_cnt.get(m, 0) > 0 else 0,
+        }
         for m in _all_min
     ]
 
@@ -562,6 +580,8 @@ def analyze_file(lines_iter, pj='', seg='', seg_all=False,
             'ts_req': dict(ts_req),
             'ts_wait': dict(ts_wait),
             'ts_done': dict(ts_done),
+            'ts_wait_tm_sum': dict(ts_wait_tm_sum),    # 분 단위 대기시간 합계 (merge용)
+            'ts_wait_tm_cnt': dict(ts_wait_tm_cnt),    # 분 단위 대기시간 건수 (merge용)
             'req_per_sec': dict(req_per_sec),          # 초 단위 요청 수 (JS timestamp 집계)
         },
         'quitWaitRows': quit_wait_rows,

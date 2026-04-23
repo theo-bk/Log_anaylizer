@@ -843,37 +843,65 @@
     });
   }
 
-  function renderCodeDonut(codeDetails) {
-    const section = document.getElementById('dash-code-section');
-    const el = document.getElementById('chart-codes');
+  // ⑥ 시간대별 대기자수 & 평균 대기시간 — NF4 wait_user / wait_tm 대응
+  function renderWaitTrendChart(data) {
+    const el = document.getElementById('chart-wait-trend');
     if (!el) return;
-    destroyChart('chart-codes');
+    destroyChart('chart-wait-trend');
+    const ts = data.timeSeries || [];
+    if (!ts.length) return;
 
-    const codes = (codeDetails || []).filter(c => !/^2/.test(String(c.code))).slice(0, 8);
-    if (!codes.length) { if (section) section.style.display = 'none'; return; }
-    if (section) section.style.display = '';
+    const firstDay = ts[0].time.slice(0, 10);
+    const isMultiDay = ts.some(t => t.time.slice(0, 10) !== firstDay);
+    const labels = ts.map(t => isMultiDay ? t.time.slice(5, 16) : t.time.slice(11, 16));
 
-    const COLORS = ['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#8b5cf6','#ec4899','#14b8a6'];
-
-    chartInstances['chart-codes'] = new Chart(el.getContext('2d'), {
-      type: 'doughnut',
+    chartInstances['chart-wait-trend'] = new Chart(el.getContext('2d'), {
+      type: 'bar',
       data: {
-        labels: codes.map(c => `${c.code}${CODE_DESC[String(c.code)] ? ' · ' + CODE_DESC[String(c.code)] : ''}`),
-        datasets: [{
-          data: codes.map(c => c.cnt),
-          backgroundColor: COLORS.slice(0, codes.length),
-          borderWidth: 2,
-          borderColor: '#fff',
-        }]
+        labels,
+        datasets: [
+          {
+            label: '대기 발생(건)',
+            data: ts.map(t => t.wait),
+            type: 'bar',
+            backgroundColor: 'rgba(251,146,60,.55)',
+            borderColor: '#fb923c',
+            borderWidth: 1,
+            yAxisID: 'y',
+          },
+          {
+            label: '평균 대기시간(초)',
+            data: ts.map(t => t.waitTmAvg ?? 0),
+            type: 'line',
+            borderColor: '#8b5cf6',
+            backgroundColor: 'rgba(139,92,246,.08)',
+            fill: false,
+            tension: 0.3,
+            pointRadius: 0,
+            borderWidth: 2,
+            borderDash: [4, 4],
+            yAxisID: 'y1',
+          },
+        ]
       },
       options: {
         responsive: true,
         maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
         plugins: {
-          legend: { position: 'bottom', labels: { font: { size: 14 }, padding: 16, boxWidth: 16 } },
+          legend: { position: 'top', labels: { font: { size: 14 }, padding: 14, boxWidth: 20 } },
           tooltip: {
-            callbacks: { label: ctx => `${ctx.raw.toLocaleString('ko-KR')}건` }
+            callbacks: {
+              label: ctx => ctx.dataset.label.includes('초')
+                ? `${ctx.dataset.label}: ${ctx.raw.toFixed(1)}초`
+                : `${ctx.dataset.label}: ${ctx.raw.toLocaleString('ko-KR')}건`,
+            }
           }
+        },
+        scales: {
+          x: { grid: { color: '#f3f4f6' }, ticks: { maxTicksLimit: 12, font: { size: 12 }, color: '#6b7280', maxRotation: 45, minRotation: 0 } },
+          y:  { beginAtZero: true, position: 'left',  grid: { color: '#f3f4f6' }, ticks: { precision: 0, font: { size: 13 } }, title: { display: true, text: '대기 발생(건)', font: { size: 12 } } },
+          y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { font: { size: 13 }, callback: v => `${v}초` }, title: { display: true, text: '평균 대기시간(초)', font: { size: 12 } } },
         }
       }
     });
@@ -1141,7 +1169,7 @@
     // ⑤ ⑥
     renderTimeSeriesChart(data);
     renderDurHistogram(data);
-    if (data.codeDetails) renderCodeDonut(data.codeDetails);
+    renderWaitTrendChart(data);
 
     const csvBind = (id, rows) => {
       const btn = document.getElementById(id);

@@ -282,16 +282,29 @@ def merge_results(labeled_results):
     ts_req_m = defaultdict(int)
     ts_wait_m = defaultdict(int)
     ts_done_m = defaultdict(int)
+    ts_wait_tm_sum_m = defaultdict(float)
+    ts_wait_tm_cnt_m = defaultdict(int)
     for _, r in labeled_results:
-        for k, v in (r.get('_raw') or {}).get('ts_req', {}).items():
+        raw = r.get('_raw') or {}
+        for k, v in raw.get('ts_req', {}).items():
             ts_req_m[k] += v
-        for k, v in (r.get('_raw') or {}).get('ts_wait', {}).items():
+        for k, v in raw.get('ts_wait', {}).items():
             ts_wait_m[k] += v
-        for k, v in (r.get('_raw') or {}).get('ts_done', {}).items():
+        for k, v in raw.get('ts_done', {}).items():
             ts_done_m[k] += v
+        for k, v in raw.get('ts_wait_tm_sum', {}).items():
+            ts_wait_tm_sum_m[k] += v
+        for k, v in raw.get('ts_wait_tm_cnt', {}).items():
+            ts_wait_tm_cnt_m[k] += v
     _all_min_m = sorted(set(ts_req_m) | set(ts_wait_m) | set(ts_done_m))
     merged_time_series = [
-        {'time': epoch_to_str(m), 'req': ts_req_m.get(m, 0), 'wait': ts_wait_m.get(m, 0), 'done': ts_done_m.get(m, 0)}
+        {
+            'time': epoch_to_str(m),
+            'req':  ts_req_m.get(m, 0),
+            'wait': ts_wait_m.get(m, 0),
+            'done': ts_done_m.get(m, 0),
+            'waitTmAvg': round(ts_wait_tm_sum_m[m] / ts_wait_tm_cnt_m[m], 1) if ts_wait_tm_cnt_m.get(m, 0) > 0 else 0,
+        }
         for m in _all_min_m
     ]
 
